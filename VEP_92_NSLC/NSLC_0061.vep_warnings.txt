@@ -1,1 +1,0 @@
-WARNING: No input file format specified - detected vcf format

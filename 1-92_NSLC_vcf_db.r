@@ -1,11 +1,10 @@
 if (!require("BiocManager", quietly = TRUE))
   install.packages("BiocManager")
-
+BiocManager::install(version = '3.16')
 BiocManager::install("GenomicRanges")
 BiocManager::install("VariantAnnotation")
 BiocManager::install("TxDb.Hsapiens.UCSC.hg19.knownGene")
 BiocManager::install("BSgenome.Hsapiens.UCSC.hg19")
-
 
 library(GenomicRanges)
 library(VariantAnnotation)
@@ -17,7 +16,11 @@ BSgenome <- BSgenome.Hsapiens.UCSC.hg19
 
 # Reference : https://bioconductor.org/packages/devel/bioc/vignettes/VariantAnnotation/inst/doc/VariantAnnotation.pdf
 
-VCF <- readVcf("92_patients_NSLC_filtered_VCFS/NSLC_0001.vcf", "hg19")
+# Linux
+VCF <- readVcf("/mnt/sda2/TMB/VEP_92_NSLC/NSLC_0001.vcf", "hg19")
+# Windows
+#VCF <- readVcf("../VEP_92_NSLC/NSLC_0001.vcf", "hg19")
+
 VCF <- keepSeqlevels(VCF, c(1:22, "X", "Y"), pruning.mode = "coarse")
 seqlevels(VCF) <- paste0("chr", c(1:22, "X", "Y"))
 VCF.range <- rowRanges(VCF)
