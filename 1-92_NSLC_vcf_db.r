@@ -17,7 +17,7 @@ BSgenome <- BSgenome.Hsapiens.UCSC.hg19
 
 # Reference : https://bioconductor.org/packages/devel/bioc/vignettes/VariantAnnotation/inst/doc/VariantAnnotation.pdf
 
-VCF <- readVcf("../92_patients_NSLC_filtered_VCFS/NSLC_0001.vcf", "hg19")
+VCF <- readVcf("92_patients_NSLC_filtered_VCFS/NSLC_0001.vcf", "hg19")
 VCF <- keepSeqlevels(VCF, c(1:22, "X", "Y"), pruning.mode = "coarse")
 seqlevels(VCF) <- paste0("chr", c(1:22, "X", "Y"))
 VCF.range <- rowRanges(VCF)
@@ -39,6 +39,6 @@ sapply(splt, function(x) length(unique(x)))
 
 ?`trim,GenomicRanges-method`
 
-# À faire : 
+# ? faire : 
 # Comparer annotations avec celles de VEP.
 # 
