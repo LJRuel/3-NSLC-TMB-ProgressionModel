@@ -17,7 +17,8 @@ BSgenome <- BSgenome.Hsapiens.UCSC.hg19
 # Reference : https://bioconductor.org/packages/devel/bioc/vignettes/VariantAnnotation/inst/doc/VariantAnnotation.pdf
 
 # Linux
-VCF <- readVcf("/mnt/sda2/TMB/VEP_92_NSLC/NSLC_0001.vcf", "hg19")
+VEP_data <- read.delim("/mnt/sda2/TMB/Data/VEP_92_NSLC/NSLC_0001.vep")
+grep('##', readLines("/mnt/sda2/TMB/Data/VEP_92_NSLC/NSLC_0001.vep"), invert = TRUE, fixed = TRUE)
 # Windows
 #VCF <- readVcf("../VEP_92_NSLC/NSLC_0001.vcf", "hg19")
 
