@@ -10,6 +10,8 @@ library(GenomicRanges)
 library(VariantAnnotation)
 library(TxDb.Hsapiens.UCSC.hg19.knownGene)
 library(BSgenome.Hsapiens.UCSC.hg19)
+library(stringr)
+library(tidyr)
 
 txdb <- TxDb.Hsapiens.UCSC.hg19.knownGene
 BSgenome <- BSgenome.Hsapiens.UCSC.hg19
@@ -17,10 +19,28 @@ BSgenome <- BSgenome.Hsapiens.UCSC.hg19
 # Reference : https://bioconductor.org/packages/devel/bioc/vignettes/VariantAnnotation/inst/doc/VariantAnnotation.pdf
 
 # Linux
-VEP_data <- read.delim("/mnt/sda2/TMB/Data/VEP_92_NSLC/NSLC_0001.vep")
-grep('##', readLines("/mnt/sda2/TMB/Data/VEP_92_NSLC/NSLC_0001.vep"), invert = TRUE, fixed = TRUE)
+VEP.first_line <- grep('##', readLines("/mnt/sda2/TMB/Data/VEP_92_NSLC/NSLC_0001.vep"), invert = TRUE, fixed = TRUE, )[1]
+VEP_data <- read.delim("/mnt/sda2/TMB/Data/VEP_92_NSLC/NSLC_0001.vep", sep = "\t", skip = VEP.first_line-1, header = TRUE)
 # Windows
-#VCF <- readVcf("../VEP_92_NSLC/NSLC_0001.vcf", "hg19")
+#VEP.first_line <- grep('##', readLines("../VEP_92_NSLC/NSLC_0001.vcf"), invert = TRUE, fixed = TRUE, )[1]
+#VEP_data <- read.delim("../VEP_92_NSLC/NSLC_0001.vcf", sep = "\t", skip = VEP.first_line-1, header = TRUE)
+
+max_extra_col_names <- which.max(str_count(VEP_data$Extra, ";"))
+extra_col_names <- gsub("=.*", "", str_split_1(VEP_data[max_extra_col_names,ncol(VEP_data)], ";"))
+
+# Now the col names have been set, split all the data rows for each new col name.
+for (i in nrow(VEP_data)) {
+  
+  
+}
+
+B = sapply(str_split(VEP_data$Extra, ";"), gsub, pattern =".*=", replacement = "")
+B <- str_split_fixed(VEP_data$Extra, ";", n=2)
+
+# Match the result with the column name.
+separate(VEP_data, Extra, c(extra_col_names), sep = ";")
+gsub(".*=", "", str_split_1(VEP_data$Extra[1], ";"))
+
 
 VCF <- keepSeqlevels(VCF, c(1:22, "X", "Y"), pruning.mode = "coarse")
 seqlevels(VCF) <- paste0("chr", c(1:22, "X", "Y"))
