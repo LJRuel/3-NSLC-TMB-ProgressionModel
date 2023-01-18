@@ -1,6 +1,6 @@
 #!/bin/bash
 
-for Patient in $(ls /mnt/sda2/TMB/Data/92_patients_NSLC_filtered_VCFS/ | grep ".vcf" | sed 's/NSLC_//' | sed 's/.vcf//'");
+for Patient in $(ls /mnt/sda2/TMB/Data/92_patients_NSLC_filtered_VCFS/ | grep ".vcf" | sed 's/NSLC_//' | sed 's/.vcf//');
 do 
 
     echo "Analysing Patient ${Patient} with VEP"
