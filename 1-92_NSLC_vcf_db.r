@@ -6,12 +6,14 @@ BiocManager::install("VariantAnnotation")
 BiocManager::install("TxDb.Hsapiens.UCSC.hg19.knownGene")
 BiocManager::install("BSgenome.Hsapiens.UCSC.hg19")
 
+library(readr)
 library(GenomicRanges)
 library(VariantAnnotation)
 library(TxDb.Hsapiens.UCSC.hg19.knownGene)
 library(BSgenome.Hsapiens.UCSC.hg19)
 library(stringr)
 library(tidyr)
+library(dplyr)
 
 txdb <- TxDb.Hsapiens.UCSC.hg19.knownGene
 BSgenome <- BSgenome.Hsapiens.UCSC.hg19
@@ -19,26 +21,23 @@ BSgenome <- BSgenome.Hsapiens.UCSC.hg19
 # Reference : https://bioconductor.org/packages/devel/bioc/vignettes/VariantAnnotation/inst/doc/VariantAnnotation.pdf
 
 # Linux
-VEP.first_line <- grep('##', readLines("/mnt/sda2/TMB/Data/VEP_92_NSLC/NSLC_0001.vep"), invert = TRUE, fixed = TRUE, )[1]
-VEP_data <- read.delim("/mnt/sda2/TMB/Data/VEP_92_NSLC/NSLC_0001.vep", sep = "\t", skip = VEP.first_line-1, header = TRUE)
+VEP.first_line <- grep('##', readLines("/mnt/sda2/TMB/Data/VEP_92_NSLC/NSLC_0001.vcf"), invert = TRUE, fixed = TRUE, )[1]
+VCF.info_lines <- grep('##INFO=', readLines("/mnt/sda2/TMB/Data/VEP_92_NSLC/NSLC_0001.vcf"), fixed = TRUE)
+VEP.format_line <- last(VCF.info_lines)
+VCF.info <- readLines("/mnt/sda2/TMB/Data/VEP_92_NSLC/NSLC_0001.vcf")[c(VCF.info_lines[1:length(VCF.info_lines)-1])] %>% gsub(".*ID=", "", .) %>% gsub(",.*", "", .)
+VEP.format <- readLines("/mnt/sda2/TMB/Data/VEP_92_NSLC/NSLC_0001.vcf")[VEP.format_line] %>% gsub(".*Format: ", "", .) %>% gsub("\">", "", .) %>% str_split(., "\\|") %>% unlist()
+VEP_data <- read.delim("/mnt/sda2/TMB/Data/VEP_92_NSLC/NSLC_0001.vcf", sep = "\t", skip = VEP.first_line-1, header = TRUE)
 # Windows
 #VEP.first_line <- grep('##', readLines("../VEP_92_NSLC/NSLC_0001.vcf"), invert = TRUE, fixed = TRUE, )[1]
 #VEP_data <- read.delim("../VEP_92_NSLC/NSLC_0001.vcf", sep = "\t", skip = VEP.first_line-1, header = TRUE)
 
-max_extra_col_names <- which.max(str_count(VEP_data$Extra, ";"))
-extra_col_names <- gsub("=.*", "", str_split_1(VEP_data[max_extra_col_names,ncol(VEP_data)], ";"))
+VEP.extra <- strsplit(VEP_data$INFO, ";\\s*(?=[^;]+$)", perl=TRUE)
+VEP_data$INFO <- sapply(VEP.extra, "[[", 1)
+VEP_data$EXTRA <- sapply(VEP.extra, "[[", 2)
+VEP_data$EXTRA <- lapply(VEP_data$EXTRA, gsub, pattern = 'CSQ=', replacement='')
+VEP_data.EXTRA_split_rows <- separate_rows(VEP_data, EXTRA, sep=",")
+VEP_data.EXTRA_split_cols <- separate(VEP_data.EXTRA_split_rows, EXTRA, c(VEP.format), sep = "\\|")
 
-# Now the col names have been set, split all the data rows for each new col name.
-for (i in nrow(VEP_data)) {
-  
-  
-}
-
-B = sapply(str_split(VEP_data$Extra, ";"), gsub, pattern =".*=", replacement = "")
-B <- str_split_fixed(VEP_data$Extra, ";", n=2)
-
-# Match the result with the column name.
-separate(VEP_data, Extra, c(extra_col_names), sep = ";")
 gsub(".*=", "", str_split_1(VEP_data$Extra[1], ";"))
 
 
