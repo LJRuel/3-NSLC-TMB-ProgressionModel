@@ -14,7 +14,7 @@ do
 
     # Change the --pick order if needed, the input and output. See https://useast.ensembl.org/info/docs/tools/vep/script/vep_options.html and http://useast.ensembl.org/info/docs/tools/vep/script/vep_other.html#pick for --pick documentation.
 
-    vep -i /mnt/sda2/TMB/Data/VEP_92_NSLC/NSLC_${Patient}.vcf -o /mnt/sda2/TMB/Data/VEP_pick_92_NSLC/NSLC_${Patient}.vcf --cache --merged --pick_allele --force_overwrite --vcf --species homo_sapiens --verbose --port 3337
+    vep -i /mnt/sda2/TMB/Data/VEP_92_NSLC/NSLC_${Patient}.vcf -o /mnt/sda2/TMB/Data/VEP_pick_92_NSLC/NSLC_${Patient}.vcf --cache --merged --pick --force_overwrite --vcf --species homo_sapiens --verbose --port 3337
 
 done
 
