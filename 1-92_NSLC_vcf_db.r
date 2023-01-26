@@ -2,16 +2,20 @@
 if (!require("BiocManager", quietly = TRUE))
   install.packages("BiocManager")
 #BiocManager::install("AnnotationHub")
+#BiocManager::install("groHMM")
 
+library(GenomicRanges)
+library(AnnotationHub)
+library(GenomicFeatures)
 library(tidyverse)
 library(data.table)
 library(xlsx)
 library(glue)
-library(GenomicRanges)
-library(AnnotationHub)
-library(GenomicFeatures)
+library(TxDb.Hsapiens.UCSC.hg19.knownGene)
 
-Patient <- "0001"
+##############################################
+######## Data cleaning and formatting ######## 
+##############################################
 
 # Mutation types annotated by VEP are available here: https://grch37.ensembl.org/info/genome/variation/prediction/predicted_data.html
 region_types <- list()
@@ -20,6 +24,11 @@ region_types[["intron"]] <- c("intron_variant", "non_coding_transcript_variant")
 region_types[["regulatory"]] <- c("regulatory_region_variant", "TF_binding_site_variant")
 region_types[["exon"]] <- c("non_coding_transcript_exon_variant", "missense_variant", "synonymous_variant", "3_prime_UTR_variant", "5_prime_UTR_variant", "coding_sequence_variant", "frameshift_variant", "stop_gained")
 region_types[["splice"]] <- c("splice_region_variant", "splice_donor_variant", "splice_acceptor_variant", "splice_polypyrimidine_tract_variant", "splice_donor_region_variant", "splice_donor_5th_base_variant")
+
+# Initating the hash table containing the TMB data for patients.
+VEP.TMB_records <- new.env(hash = TRUE)
+
+Patient <- "0001"
 
 ## Linux
 if(Sys.info()['sysname'] == "Linux") {
@@ -103,33 +112,85 @@ if(!all(unique(worst_consequence) %in% as.vector(unlist(region_types)))) {
 ##############################################
 
 # References: https://gist.github.com/crazyhottommy/4681a30700b2c0c1ee02cbc875e7c4e9
+## make a txdb
+GRCh37.txdb <- TxDb.Hsapiens.UCSC.hg19.knownGene
+GRCh37.txdb <- keepSeqlevels(GRCh37.txdb, paste0("chr", c(1:22, "X", "Y")), pruning.mode = "coarse")
 
-ah = AnnotationHub()
-possibleDates(ah)
-AnnotationHub::query(ah, c("gtf", "Homo_sapiens", "GRCh37"))
+## exons
+exons <- exonsBy(GRCh37.txdb, "gene")
+exons2<- exonicParts(GRCh37.txdb, linked.to.single.gene.only = TRUE)
 
+width(exons) %>% unlist() %>% sum()
+width(exons2) %>% unlist() %>% sum()
 
-#####################################
-################ TMB ################
-#####################################
+## introns
+introns <- intronicParts(GRCh37.txdb, linked.to.single.gene.only = TRUE)
+width(introns) %>% sum()
 
-# The GRCh37 whole genome size is 3,101,788,170 bases = 3,102 Mb
+##############################################
+#################### TMB #####################
+##############################################
+
+# The GRCh37 whole genome size is 3,101,788,170 bases = 3,102 Mb. Reference: https://www.ncbi.nlm.nih.gov/assembly/GCF_000001405.25/
 # The WGS TMB contained in the clinical data (clin_data) has been calculated using a general size of 3000 Mb.
 # WGS TMB without synonymous variants
 VEP.WGS_TMB.no_syn <- round(nrow(VEP_data[Consequence != "synonymous_variant"]) / 3102, digits = 3)
+# WGS TMB with synonymous variants
 VEP.WGS_TMB.syn <- round(nrow(VEP_data) / 3102, digits = 3)
 
-
+# TMBs depending on the region. They are calculated based on the whole genome size instead of their own region total cumulative size.
+# This only allows to get the ratio of each region based TMB on the total WGS TMB.
+# Same with WGS TMB, two version of th exon TMB include synonymous variants or not.
 VEP.intergenic_TMB <- round(nrow(VEP_data[region_type == "intergenic"]) / 3102, digits = 3)
-names(region_types)
+VEP.intron_TMB <- round(nrow(VEP_data[region_type == "intron"]) / 3102, digits = 3)
+VEP.regulatory_TMB <- round(nrow(VEP_data[region_type == "regulatory"]) / 3102, digits = 3)
+VEP.exon_TMB.syn <- round(nrow(VEP_data[region_type == "exon"]) / 3102, digits = 3)
+VEP.exon_TMB.no_syn <- round(nrow(VEP_data[region_type == "exon" & Consequence != "synonymous_variant"]) / 3102, digits = 3)
+VEP.splice_TMB <- round(nrow(VEP_data[region_type == "splice"]) / 3102, digits = 3)
+
+VEP.TMBs_list.no_syn <- c(VEP.intergenic_TMB, VEP.intron_TMB, VEP.regulatory_TMB, VEP.exon_TMB.no_syn, VEP.splice_TMB)
+VEP.TMBs_list.syn <- c(VEP.intergenic_TMB, VEP.intron_TMB, VEP.regulatory_TMB, VEP.exon_TMB.syn, VEP.splice_TMB)
+
+# Making a table for WGS and region based TMB calculated above. Not including synonymous variants.
+if(round(sum(TMBs_list.no_syn), digits = 3) != VEP.WGS_TMB.no_syn) {
+  message("The WGS TMB with no synonymous_variant is incomplete. Check that the variant count from VEP_data is correct.")
+} else {
+  VEP.TMBs.no_syn <- setNames(
+    list(
+      setNames(c(VEP.WGS_TMB.no_syn, TMBs_list.no_syn), c("total_WGS_TMB", paste0(names(region_types), "_WGS_TMB"))),
+      setNames(sapply(1:length(TMBs_list.no_syn), function(x) round(TMBs_list.no_syn[x]/VEP.WGS_TMB.no_syn, digits = 4)), paste0(names(region_types), "_WGS_TMB_ratio"))), 
+    c("WGS_TMBs_no_synonymous", "WGS_TMBs_no_synonymous_ratios")
+  )
+}
+
+# Making a table for WGS and region based TMB calculated above. Including synonymous variants.
+if(round(sum(TMBs_list.syn), digits = 3) != VEP.WGS_TMB.syn) {
+  message("The WGS TMB with no synonymous_variant is incomplete. Check that the variant count from VEP_data is correct.")
+} else {
+  VEP.TMBs.syn <- setNames(
+    list(
+      setNames(c(VEP.WGS_TMB.syn, TMBs_list.syn), c("total_WGS_TMB", paste0(names(region_types), "_WGS_TMB"))),
+      setNames(sapply(1:length(TMBs_list.syn), function(x) round(TMBs_list.syn[x]/VEP.WGS_TMB.syn, digits = 4)), paste0(names(region_types), "_WGS_TMB_ratio"))), 
+    c("WGS_TMBs_synonymous", "WGS_TMBs_synonymous_ratios")
+  )
+}
+
+VEP.TMB_records[[glue("NSLC_{Patient}")]] = c(VEP.TMBs.no_syn, VEP.TMBs.syn)
 
 
 
 
 
+## TODO
+# - Find the respective total size of each region type.
+# - Get CNV data
+# - Repeat the TMB operations, but for each mutation type (SNVs, insertion, deletion, CNV(?), ...)
+# - Make a graph of all variants with a Manhattan-like style plot (one for each chromosome?).
+#   One color per region type.
+# - Make a similar graph that combines all the patients.
 
-## TO DO :
-# - Est-ce qu'on garde les synonymous variants?
+
+
 
 ##########################################
 ################ ARCHIVES ################
@@ -144,9 +205,7 @@ if (!require("BiocManager", quietly = TRUE))
 #BiocManager::install("BSgenome.Hsapiens.UCSC.hg19")
 
 library(VariantAnnotation)
-library(TxDb.Hsapiens.UCSC.hg19.knownGene)
 library(BSgenome.Hsapiens.UCSC.hg19)
-txdb <- TxDb.Hsapiens.UCSC.hg19.knownGene
 BSgenome <- BSgenome.Hsapiens.UCSC.hg19
 
 vcf <- readVcf(glue("/mnt/sda2/TMB/Data/92_patients_NSLC_filtered_VCFS/NSLC_{Patient}.vcf"), "hg19")
