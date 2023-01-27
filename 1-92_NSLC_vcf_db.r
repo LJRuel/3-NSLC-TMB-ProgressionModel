@@ -13,6 +13,8 @@ library(xlsx)
 library(glue)
 library(TxDb.Hsapiens.UCSC.hg19.knownGene)
 
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+
 ##############################################
 ######## Data cleaning and formatting ######## 
 ##############################################
@@ -28,37 +30,15 @@ region_types[["splice"]] <- c("splice_region_variant", "splice_donor_variant", "
 # Initating the hash table containing the TMB data for patients.
 VEP.TMB_records <- new.env(hash = TRUE)
 
+# Clinicopathological data - keeping only adenocarinomas
+clin_data <- as.data.table(read.xlsx("Data/NCI_NeverSmoker_n92_20210812_TMB_drivers.xlsx", sheetIndex = 1))
+clin_data <- clin_data[histology == 3, ]
+
+
 Patient <- "0001"
 
-## Linux
-if(Sys.info()['sysname'] == "Linux") {
-  # Clinicopathological data - keeping only adenocarinomas
-  clin_data <- as.data.table(read.xlsx("/home/l_ruelou01/NSLC_TMB-Model/Data/NCI_NeverSmoker_n92_20210812_TMB_drivers.xlsx", sheetIndex = 1))
-  clin_data <- clin_data[histology == 3, ]
-  
-  VEP.raw <- readLines(glue("/mnt/sda2/TMB/Data/VEP_92_NSLC/NSLC_{Patient}.vcf"))
-  VEP.header <- grep('##', VEP.raw, invert = TRUE, fixed = TRUE, )[1]
-  VCF.info_lines <- grep('##INFO=', VEP.raw, fixed = TRUE)
-  VEP.format_line <- last(VCF.info_lines)
-  VCF.info <- VEP.raw[c(VCF.info_lines[1:length(VCF.info_lines)-1])] %>% gsub(".*ID=", "", .) %>% gsub(",.*", "", .)
-  VEP.format <- VEP.raw[VEP.format_line] %>% gsub(".*Format: ", "", .) %>% gsub("\">", "", .) %>% str_split(., "\\|") %>% unlist()
-  VEP_data <- setDT(read.delim(glue("/mnt/sda2/TMB/Data/VEP_92_NSLC/NSLC_{Patient}.vcf"), sep = "\t", skip = VEP.header-1, header = TRUE))
-  setnames(VEP_data, "X.CHROM", "CHROM")
-  
-  # Removing MT chromosome variants
-  VEP_data <- VEP_data[CHROM != "MT",]
-  
-  # Adding patient ID to the ID field
-  VEP_data[, ID := paste0(glue("{Patient}:"), VEP_data[,ID])]
-}
-  
-## Windows
-if(Sys.info()['sysname'] == "Windows") {
-  # Clinicopathological data - keeping only adenocarinomas
-  clin_data <- as.data.table(read.xlsx("Data/NCI_NeverSmoker_n92_20210812_TMB_drivers.xlsx", sheetIndex = 1))
-  clin_data <- clin_data[histology == 3, ]
-  
-  # Getting the description and data lines from vcf files
+## Importing vcf data
+if(glue("NSLC-{Patient}") %in% clin_data[, Patient_ID]) {
   VEP.raw <- readLines(glue("Data/VEP_92_NSLC/NSLC_{Patient}.vcf"))
   VEP.header <- grep('##', VEP.raw, invert = TRUE, fixed = TRUE, )[1]
   VCF.info_lines <- grep('##INFO=', VEP.raw, fixed = TRUE)
@@ -73,6 +53,9 @@ if(Sys.info()['sysname'] == "Windows") {
   
   # Adding patient ID to the ID field
   VEP_data[, ID := paste0(glue("{Patient}:"), VEP_data[,ID])]
+} else {
+  message(glue("The patient {Patient} is excluded. Handling next patient."))
+  break
 }
 
 ## Data formatting
@@ -127,6 +110,8 @@ width(exons2) %>% unlist() %>% sum()
 introns <- intronicParts(GRCh37.txdb, linked.to.single.gene.only = TRUE)
 width(introns) %>% sum()
 
+
+
 ##############################################
 #################### TMB #####################
 ##############################################
@@ -152,25 +137,25 @@ VEP.TMBs_list.no_syn <- c(VEP.intergenic_TMB, VEP.intron_TMB, VEP.regulatory_TMB
 VEP.TMBs_list.syn <- c(VEP.intergenic_TMB, VEP.intron_TMB, VEP.regulatory_TMB, VEP.exon_TMB.syn, VEP.splice_TMB)
 
 # Making a table for WGS and region based TMB calculated above. Not including synonymous variants.
-if(round(sum(TMBs_list.no_syn), digits = 3) != VEP.WGS_TMB.no_syn) {
+if(round(sum(VEP.TMBs_list.no_syn), digits = 3) != VEP.WGS_TMB.no_syn) {
   message("The WGS TMB with no synonymous_variant is incomplete. Check that the variant count from VEP_data is correct.")
 } else {
   VEP.TMBs.no_syn <- setNames(
     list(
-      setNames(c(VEP.WGS_TMB.no_syn, TMBs_list.no_syn), c("total_WGS_TMB", paste0(names(region_types), "_WGS_TMB"))),
-      setNames(sapply(1:length(TMBs_list.no_syn), function(x) round(TMBs_list.no_syn[x]/VEP.WGS_TMB.no_syn, digits = 4)), paste0(names(region_types), "_WGS_TMB_ratio"))), 
+      setNames(c(VEP.WGS_TMB.no_syn, VEP.TMBs_list.no_syn), c("total_WGS_TMB", paste0(names(region_types), "_WGS_TMB"))),
+      setNames(sapply(1:length(VEP.TMBs_list.no_syn), function(x) round(VEP.TMBs_list.no_syn[x]/VEP.WGS_TMB.no_syn, digits = 4)), paste0(names(region_types), "_WGS_TMB_ratio"))), 
     c("WGS_TMBs_no_synonymous", "WGS_TMBs_no_synonymous_ratios")
   )
 }
 
 # Making a table for WGS and region based TMB calculated above. Including synonymous variants.
-if(round(sum(TMBs_list.syn), digits = 3) != VEP.WGS_TMB.syn) {
+if(round(sum(VEP.TMBs_list.syn), digits = 3) != VEP.WGS_TMB.syn) {
   message("The WGS TMB with no synonymous_variant is incomplete. Check that the variant count from VEP_data is correct.")
 } else {
   VEP.TMBs.syn <- setNames(
     list(
-      setNames(c(VEP.WGS_TMB.syn, TMBs_list.syn), c("total_WGS_TMB", paste0(names(region_types), "_WGS_TMB"))),
-      setNames(sapply(1:length(TMBs_list.syn), function(x) round(TMBs_list.syn[x]/VEP.WGS_TMB.syn, digits = 4)), paste0(names(region_types), "_WGS_TMB_ratio"))), 
+      setNames(c(VEP.WGS_TMB.syn, VEP.TMBs_list.syn), c("total_WGS_TMB", paste0(names(region_types), "_WGS_TMB"))),
+      setNames(sapply(1:length(VEP.TMBs_list.syn), function(x) round(VEP.TMBs_list.syn[x]/VEP.WGS_TMB.syn, digits = 4)), paste0(names(region_types), "_WGS_TMB_ratio"))), 
     c("WGS_TMBs_synonymous", "WGS_TMBs_synonymous_ratios")
   )
 }
