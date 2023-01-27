@@ -1,11 +1,18 @@
 
+
+## TODO
+# - Repeat the TMB operations, but for each mutation type (SNVs, insertion, deletion, CNV(?), ...).
+# - Find the respective total size of each region type.
+# - Get CNV data -> need BAM files.
+# - Make a graph of all variants with a Manhattan-like style plot (one for each chromosome?).
+#   One color per region type.
+# - Make a similar graph that combines all the patients.
+
 if (!require("BiocManager", quietly = TRUE))
   install.packages("BiocManager")
 #BiocManager::install("AnnotationHub")
-#BiocManager::install("groHMM")
 
 library(GenomicRanges)
-library(AnnotationHub)
 library(GenomicFeatures)
 library(tidyverse)
 library(data.table)
@@ -15,17 +22,37 @@ library(TxDb.Hsapiens.UCSC.hg19.knownGene)
 
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 
-##############################################
-######## Data cleaning and formatting ######## 
-##############################################
+################################################################################
+######################### Data cleaning and formatting ######################### 
+################################################################################
 
 # Mutation types annotated by VEP are available here: https://grch37.ensembl.org/info/genome/variation/prediction/predicted_data.html
 region_types <- list()
-region_types[["intergenic"]] <- c("downstream_gene_variant", "upstream_gene_variant", "intergenic_variant")
-region_types[["intron"]] <- c("intron_variant", "non_coding_transcript_variant")
-region_types[["regulatory"]] <- c("regulatory_region_variant", "TF_binding_site_variant")
-region_types[["exon"]] <- c("non_coding_transcript_exon_variant", "missense_variant", "synonymous_variant", "3_prime_UTR_variant", "5_prime_UTR_variant", "coding_sequence_variant", "frameshift_variant", "stop_gained")
-region_types[["splice"]] <- c("splice_region_variant", "splice_donor_variant", "splice_acceptor_variant", "splice_polypyrimidine_tract_variant", "splice_donor_region_variant", "splice_donor_5th_base_variant")
+region_types[["intergenic"]] <- c("downstream_gene_variant", 
+                                  "upstream_gene_variant", 
+                                  "intergenic_variant")
+
+region_types[["intron"]] <- c("intron_variant", 
+                              "non_coding_transcript_variant")
+
+region_types[["regulatory"]] <- c("regulatory_region_variant", 
+                                  "TF_binding_site_variant")
+
+region_types[["exon"]] <- c("non_coding_transcript_exon_variant", 
+                            "missense_variant", 
+                            "synonymous_variant", 
+                            "3_prime_UTR_variant", 
+                            "5_prime_UTR_variant", 
+                            "coding_sequence_variant", 
+                            "frameshift_variant", 
+                            "stop_gained")
+
+region_types[["splice"]] <- c("splice_region_variant", 
+                              "splice_donor_variant", 
+                              "splice_acceptor_variant", 
+                              "splice_polypyrimidine_tract_variant", 
+                              "splice_donor_region_variant", 
+                              "splice_donor_5th_base_variant")
 
 # Initating the hash table containing the TMB data for patients.
 VEP.TMB_records <- new.env(hash = TRUE)
@@ -34,7 +61,7 @@ VEP.TMB_records <- new.env(hash = TRUE)
 clin_data <- as.data.table(read.xlsx("Data/NCI_NeverSmoker_n92_20210812_TMB_drivers.xlsx", sheetIndex = 1))
 clin_data <- clin_data[histology == 3, ]
 
-
+# Patients list
 Patient <- "0001"
 
 ## Importing vcf data
@@ -77,22 +104,35 @@ worst_consequence <- sapply(strsplit(VEP_data[,Consequence], "&", perl=TRUE), "[
 # If a consequence type is not registered in the region_types variable, then a message prompts to add 
 #   the missing consequence to the proper region type, according to https://grch37.ensembl.org/info/genome/variation/prediction/predicted_data.html.
 if(!all(unique(worst_consequence) %in% as.vector(unlist(region_types)))) {
-  message("A missing region type has been detected. Please add the missing
-          region in the propoer region_types variable (see script) according to 
-          https://grch37.ensembl.org/info/genome/variation/prediction/predicted_data.html.")
+  missing_consequence <- unique(worst_consequence[!(worst_consequence %in% as.vector(unlist(region_types)))])
+  stop("Missing region type detected: ", paste(missing_consequence, collapse = ", "), 
+  ".\nPlease add the missing region in the proper 'region_types' variable (see script)",  
+  "\naccording to https://grch37.ensembl.org/info/genome/variation/prediction/predicted_data.html.")
+  cat()
+  
 } else {
   VEP_data[, region_type := unlist(sapply(1:nrow(VEP_data), function(x) {names(region_types[grep(worst_consequence[x], region_types)])}))]
   # Bringing region_type column next to Consequence column
   setcolorder(VEP_data, colnames(VEP_data)[c(1:13, ncol(VEP_data), 14:(ncol(VEP_data)-1))])
 }
 
+
+# Adding mutation type
+VEP_data <- VEP_data %>%
+  mutate(mutation_type = case_when(nchar(REF) == nchar(ALT) ~ "SNV",
+                                   nchar(REF) > nchar(ALT) ~ "deletion",
+                                   nchar(REF) < nchar(ALT) ~ "insertion"))
+# Bringing mutation_type column next to region_type column
+setcolorder(VEP_data, colnames(VEP_data)[c(1:14, ncol(VEP_data), 15:(ncol(VEP_data)-1))])
+
+
 # Final data set for each patient
 #assign(glue("VEP_data.NSLC_{Patient}"), VEP_data)
-#fwrite(VEP_data.NSLC_0001, glue("/mnt/sda2/TMB/Data/VEP_92_NSLC/VEP_NSLC_{Patient}.csv"))
+#fwrite(VEP_data.NSLC_0001, glue("Data/VEP_92_NSLC/VEP_NSLC_{Patient}.csv"))
 
-##############################################
-################ Regions size ################
-##############################################
+################################################################################
+################################# Regions size #################################
+################################################################################
 
 # References: https://gist.github.com/crazyhottommy/4681a30700b2c0c1ee02cbc875e7c4e9
 ## make a txdb
@@ -111,10 +151,9 @@ introns <- intronicParts(GRCh37.txdb, linked.to.single.gene.only = TRUE)
 width(introns) %>% sum()
 
 
-
-##############################################
-#################### TMB #####################
-##############################################
+################################################################################
+########################## TMB according to regions ############################
+################################################################################
 
 # The GRCh37 whole genome size is 3,101,788,170 bases = 3,102 Mb. Reference: https://www.ncbi.nlm.nih.gov/assembly/GCF_000001405.25/
 # The WGS TMB contained in the clinical data (clin_data) has been calculated using a general size of 3000 Mb.
@@ -163,23 +202,21 @@ if(round(sum(VEP.TMBs_list.syn), digits = 3) != VEP.WGS_TMB.syn) {
 VEP.TMB_records[[glue("NSLC_{Patient}")]] = c(VEP.TMBs.no_syn, VEP.TMBs.syn)
 
 
-
-
-
-## TODO
-# - Find the respective total size of each region type.
-# - Get CNV data
-# - Repeat the TMB operations, but for each mutation type (SNVs, insertion, deletion, CNV(?), ...)
-# - Make a graph of all variants with a Manhattan-like style plot (one for each chromosome?).
-#   One color per region type.
-# - Make a similar graph that combines all the patients.
+################################################################################
+####################### TMB according to mutation types ########################
+################################################################################
 
 
 
 
-##########################################
-################ ARCHIVES ################
-##########################################
+
+
+
+
+
+################################################################################
+################################### ARCHIVES ###################################
+################################################################################
 
 ## Comparing GRanges annotation with VEP annotations
 if (!require("BiocManager", quietly = TRUE))
