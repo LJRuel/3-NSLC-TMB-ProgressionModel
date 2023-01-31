@@ -11,14 +11,23 @@
 if (!require("BiocManager", quietly = TRUE))
   install.packages("BiocManager")
 #BiocManager::install("AnnotationHub")
+#BiocManager::install("TxDb.Hsapiens.UCSC.hg19.knownGene")
+#BiocManager::install("biomaRt")
+#BiocManager::install("ensembldb")
+#BiocManager::install("EnsDb.Hsapiens.v75")
 
-library(GenomicRanges)
+
 library(GenomicFeatures)
+library(GenomicRanges)
+library(AnnotationHub)
 library(tidyverse)
 library(data.table)
 library(xlsx)
 library(glue)
 library(TxDb.Hsapiens.UCSC.hg19.knownGene)
+library(biomaRt)
+library(ensembldb)
+library(EnsDb.Hsapiens.v75)
 
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 
@@ -136,19 +145,83 @@ setcolorder(VEP_data, colnames(VEP_data)[c(1:14, ncol(VEP_data), 15:(ncol(VEP_da
 
 # References: https://gist.github.com/crazyhottommy/4681a30700b2c0c1ee02cbc875e7c4e9
 ## make a txdb
+
 GRCh37.txdb <- TxDb.Hsapiens.UCSC.hg19.knownGene
 GRCh37.txdb <- keepSeqlevels(GRCh37.txdb, paste0("chr", c(1:22, "X", "Y")), pruning.mode = "coarse")
 
 ## exons
-exons <- exonsBy(GRCh37.txdb, "gene")
-exons2<- exonicParts(GRCh37.txdb, linked.to.single.gene.only = TRUE)
-
-width(exons) %>% unlist() %>% sum()
+exons2 <- exonicParts(GRCh37.txdb)
 width(exons2) %>% unlist() %>% sum()
 
 ## introns
-introns <- intronicParts(GRCh37.txdb, linked.to.single.gene.only = TRUE)
-width(introns) %>% sum()
+introns2 <- intronicParts(GRCh37.txdb, linked.to.single.gene.only = TRUE)
+width(introns2) %>% unlist() %>% sum()
+
+
+
+#GRCh37.txdb <- keepSeqlevels(GRCh37.txdb, paste0("chr", c(1:22, "X", "Y")), pruning.mode = "coarse")
+#seqlevels(GRCh37.txdb)
+
+#GRCh37.genes <- keepSeqlevels(GRCh37.genes, paste0("chr", c(1:22, "X", "Y")), pruning.mode = "coarse")
+#seqlevels(GRCh37.genes)
+
+# ## exons
+# exons <- granges(exonsBy(GRCh37.txdb, "gene")  )
+# class(GRCh37.txdb)
+# exons2 <- exonicParts(GRCh37.txdb, linked.to.single.gene.only = TRUE)
+# 
+# width(exons) %>% unlist() %>% sum()
+# width(exons2) %>% unlist() %>% sum()
+# 
+# exons3 <- exonsBy(GRCh37.genes, "gene")
+# exons4 <- exonicParts(GRCh37.genes, linked.to.single.gene.only = TRUE)
+# 
+# width(exons3) %>% unlist() %>% sum()
+# width(exons4) %>% unlist() %>% sum()
+# 
+# 
+# ## introns
+# introns <- intronicParts(GRCh37.txdb, linked.to.single.gene.only = TRUE)
+# width(introns) %>% sum()
+
+
+GRCh37.ensembl <- useEnsembl(biomart="ensembl", dataset="hsapiens_gene_ensembl", GRCh = 37)
+filters <- listFilters(GRCh37.ensembl)
+attributes <- listAttributes(GRCh37.ensembl)
+
+searchAttributes(GRCh37.ensembl, pattern = "exon")
+searchAttributes(GRCh37.ensembl, pattern = "intron")
+searchAttributes(GRCh37.ensembl, pattern = "biotype")
+searchAttributes(GRCh37.ensembl, pattern = "name")
+keytypes(GRCh37.ensembl)
+
+
+chr1_exons <- getBM(mart = GRCh37.ensembl, attributes = c("chromosome_name", "gene_exon"), filters = "chromosome_name", values = "1")
+chr1_genes <- getBM(mart = GRCh37.ensembl, attributes = c("chromosome_name", "transcript_exon_intron"), filters = "chromosome_name", values = "1")
+
+exons <- getBM(mart = GRCh37.ensembl, attributes = c("chromosome_name", "exon_chrom_start", "exon_chrom_end", "gene_biotype"))
+
+exons <- chr1_exons2[order(chr1_exons2$exon_chrom_start), ]
+chr1_exons2 <- chr1_exons2[chr1_exons2$gene_biotype=="protein_coding",]
+
+sum(as.numeric(chr1_exons2$exon_chrom_end) - as.numeric(chr1_exons2$exon_chrom_start))
+
+sum(nchar(chr1_genes[c(1:nrow(chr1_genes)),2]))
+sum(nchar(chr1_exons[c(1:nrow(chr1_exons)),2]))
+
+
+
+edb <- EnsDb.Hsapiens.v75
+edb <- addFilter(edb, SeqNameFilter(c(1:22, "X", "Y")))
+supportedFilters(edb)
+exons <- sort.GenomicRanges(exons(edb))
+exons1 <- exonsBy(edb)
+exons2 <- exonicParts(edb)
+
+genes <- genes(edb)
+unique(genes$gene_biotype)
+
+
 
 
 ################################################################################
