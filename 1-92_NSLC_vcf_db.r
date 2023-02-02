@@ -1,8 +1,11 @@
 
+##Questions
+# - Est-ce qu'on garde les synonymnous variants?
+# - Est-ce qu'on garde les pseudogenes dans les variants annotés?
 
 ## TODO
+# - Add the regulatory and splice site into intergenic and exon TMB calculation (option 1), respectively.
 # - Repeat the TMB operations, but for each mutation type (SNVs, insertion, deletion, CNV(?), ...).
-# - Find the respective total size of each region type.
 # - Get CNV data -> need BAM files.
 # - Make a graph of all variants with a Manhattan-like style plot (one for each chromosome?).
 #   One color per region type.
@@ -26,7 +29,6 @@ library(xlsx)
 library(glue)
 library(TxDb.Hsapiens.UCSC.hg19.knownGene)
 library(biomaRt)
-library(ensembldb)
 library(EnsDb.Hsapiens.v75)
 
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
@@ -144,106 +146,81 @@ setcolorder(VEP_data, colnames(VEP_data)[c(1:14, ncol(VEP_data), 15:(ncol(VEP_da
 ################################################################################
 
 # References: https://gist.github.com/crazyhottommy/4681a30700b2c0c1ee02cbc875e7c4e9
-## make a txdb
 
-GRCh37.txdb <- TxDb.Hsapiens.UCSC.hg19.knownGene
-GRCh37.txdb <- keepSeqlevels(GRCh37.txdb, paste0("chr", c(1:22, "X", "Y")), pruning.mode = "coarse")
-
-## exons
-exons2 <- exonicParts(GRCh37.txdb)
-width(exons2) %>% unlist() %>% sum()
-
-## introns
-introns2 <- intronicParts(GRCh37.txdb, linked.to.single.gene.only = TRUE)
-width(introns2) %>% unlist() %>% sum()
+ah = AnnotationHub()
+possibleDates(ah)
+AnnotationHub::query(ah, c("gtf", "Homo_sapiens", "GRCh37"))
+GRCh37.gtf<- ah[['AH10684']]
 
 
+## subset the gtf files for only protein_coding genes and lincRNAs
+GRCh37.gtf<- GRCh37.gtf[GRCh37.gtf$gene_biotype %in% c("protein_coding", "lincRNA")]
+table(GRCh37.gtf$gene_biotype)
 
-#GRCh37.txdb <- keepSeqlevels(GRCh37.txdb, paste0("chr", c(1:22, "X", "Y")), pruning.mode = "coarse")
-#seqlevels(GRCh37.txdb)
+## make a txdb and keep conventional chromosomes
+GRCh37.txdb <- makeTxDbFromGRanges(GRCh37.gtf)
+GRCh37.txdb <- keepSeqlevels(GRCh37.txdb, c(1:22, "X", "Y"), pruning.mode = "coarse")
 
-#GRCh37.genes <- keepSeqlevels(GRCh37.genes, paste0("chr", c(1:22, "X", "Y")), pruning.mode = "coarse")
-#seqlevels(GRCh37.genes)
+## cds (not compiled in the total genome size because included in exons)
+cds <- cdsBy(GRCh37.txdb, "gene") %>% unlist() %>% GenomicRanges::reduce()
+sum(width(cds))
 
-# ## exons
-# exons <- granges(exonsBy(GRCh37.txdb, "gene")  )
-# class(GRCh37.txdb)
-# exons2 <- exonicParts(GRCh37.txdb, linked.to.single.gene.only = TRUE)
-# 
-# width(exons) %>% unlist() %>% sum()
-# width(exons2) %>% unlist() %>% sum()
-# 
-# exons3 <- exonsBy(GRCh37.genes, "gene")
-# exons4 <- exonicParts(GRCh37.genes, linked.to.single.gene.only = TRUE)
-# 
-# width(exons3) %>% unlist() %>% sum()
-# width(exons4) %>% unlist() %>% sum()
-# 
-# 
-# ## introns
-# introns <- intronicParts(GRCh37.txdb, linked.to.single.gene.only = TRUE)
-# width(introns) %>% sum()
+## exons: 102540627 bp
+exons <- exonicParts(GRCh37.txdb) %>% GenomicRanges::reduce()
+exons_size <- as.double(sum(width(exons)))
 
+## introns: 1378434449 bp
+# The overlap with some exons is also removed by GenomicRanges::setdiff() function.
+introns <- intronicParts(GRCh37.txdb) %>% GenomicRanges::setdiff(., exons)
+introns_size <- as.double(sum(width(introns)))
 
-GRCh37.ensembl <- useEnsembl(biomart="ensembl", dataset="hsapiens_gene_ensembl", GRCh = 37)
-filters <- listFilters(GRCh37.ensembl)
-attributes <- listAttributes(GRCh37.ensembl)
+## intergenic regions: 1648614450 bp
+chrom_grngs <- as(seqinfo(GRCh37.txdb), "GRanges")
+collapsed_tx <- GenomicRanges::reduce(transcripts(GRCh37.txdb))
+strand(collapsed_tx) <- "*"
+intergenic <- GenomicRanges::setdiff(chrom_grngs, collapsed_tx)
+intergenic_size <- as.double(sum(width(intergenic)))
 
-searchAttributes(GRCh37.ensembl, pattern = "exon")
-searchAttributes(GRCh37.ensembl, pattern = "intron")
-searchAttributes(GRCh37.ensembl, pattern = "biotype")
-searchAttributes(GRCh37.ensembl, pattern = "name")
-keytypes(GRCh37.ensembl)
+# 5' and 3' UTR 
+five_UTR <- fiveUTRsByTranscript(GRCh37.txdb) %>% unlist() %>% GenomicRanges::reduce()
+sum(width(five_UTR))
 
+three_UTR <- threeUTRsByTranscript(GRCh37.txdb) %>% unlist() %>% GenomicRanges::reduce()
+sum(width(three_UTR))
 
-chr1_exons <- getBM(mart = GRCh37.ensembl, attributes = c("chromosome_name", "gene_exon"), filters = "chromosome_name", values = "1")
-chr1_genes <- getBM(mart = GRCh37.ensembl, attributes = c("chromosome_name", "transcript_exon_intron"), filters = "chromosome_name", values = "1")
+## total genome size: 3129589526 bp
+genome_size <- sum(c(exons_size, introns_size, intergenic_size))
 
-exons <- getBM(mart = GRCh37.ensembl, attributes = c("chromosome_name", "exon_chrom_start", "exon_chrom_end", "gene_biotype"))
-
-exons <- chr1_exons2[order(chr1_exons2$exon_chrom_start), ]
-chr1_exons2 <- chr1_exons2[chr1_exons2$gene_biotype=="protein_coding",]
-
-sum(as.numeric(chr1_exons2$exon_chrom_end) - as.numeric(chr1_exons2$exon_chrom_start))
-
-sum(nchar(chr1_genes[c(1:nrow(chr1_genes)),2]))
-sum(nchar(chr1_exons[c(1:nrow(chr1_exons)),2]))
-
-
-
-edb <- EnsDb.Hsapiens.v75
-edb <- addFilter(edb, SeqNameFilter(c(1:22, "X", "Y")))
-supportedFilters(edb)
-exons <- sort.GenomicRanges(exons(edb))
-exons1 <- exonsBy(edb)
-exons2 <- exonicParts(edb)
-
-genes <- genes(edb)
-unique(genes$gene_biotype)
-
-
-
+## Final sizes used for TMB calculation. 
+#  Values are in bp. TMB requires them to be in Mb, therefore a simple / 10^6 is needed when calculating TMBs.
+GRCh37.region_sizes <- new.env(hash = TRUE)
+GRCh37.region_sizes <- setNames(list(3129589526, 102540627, 1378434449, 1648614450), 
+                                list("genome_size", "exons_size", 
+                                     "introns_size", "intergenic_size"))
 
 ################################################################################
 ########################## TMB according to regions ############################
 ################################################################################
 
-# The GRCh37 whole genome size is 3,101,788,170 bases = 3,102 Mb. Reference: https://www.ncbi.nlm.nih.gov/assembly/GCF_000001405.25/
+# The GRCh37 whole genome size is 3,129,589,526 bases = 3,192 Mb as calculated above (see GRCh37.region_sizes variable).
 # The WGS TMB contained in the clinical data (clin_data) has been calculated using a general size of 3000 Mb.
 # WGS TMB without synonymous variants
-VEP.WGS_TMB.no_syn <- round(nrow(VEP_data[Consequence != "synonymous_variant"]) / 3102, digits = 3)
+VEP.WGS_TMB.no_syn <- round(nrow(VEP_data[Consequence != "synonymous_variant"]) / (GRCh37.region_sizes$genome_size / 1e6), digits = 3)
 # WGS TMB with synonymous variants
-VEP.WGS_TMB.syn <- round(nrow(VEP_data) / 3102, digits = 3)
+VEP.WGS_TMB.syn <- round(nrow(VEP_data) / (GRCh37.region_sizes$genome_size / 1e6), digits = 3)
 
 # TMBs depending on the region. They are calculated based on the whole genome size instead of their own region total cumulative size.
 # This only allows to get the ratio of each region based TMB on the total WGS TMB.
 # Same with WGS TMB, two version of th exon TMB include synonymous variants or not.
-VEP.intergenic_TMB <- round(nrow(VEP_data[region_type == "intergenic"]) / 3102, digits = 3)
-VEP.intron_TMB <- round(nrow(VEP_data[region_type == "intron"]) / 3102, digits = 3)
-VEP.regulatory_TMB <- round(nrow(VEP_data[region_type == "regulatory"]) / 3102, digits = 3)
-VEP.exon_TMB.syn <- round(nrow(VEP_data[region_type == "exon"]) / 3102, digits = 3)
-VEP.exon_TMB.no_syn <- round(nrow(VEP_data[region_type == "exon" & Consequence != "synonymous_variant"]) / 3102, digits = 3)
-VEP.splice_TMB <- round(nrow(VEP_data[region_type == "splice"]) / 3102, digits = 3)
+
+## *** Option 1: TMB calculated according to each region's size, e.g. intron TMB with intron variants and intron size.
+# Using this option limits the region types to exon, intron and intergenic. 
+# Regulatory are included in intergenic and splice are included in exon.
+VEP.intergenic_TMB <- round(nrow(VEP_data[region_type == "intergenic" | region_type == "regulatory"]) / 
+                              (GRCh37.region_sizes$intergenic_size / 1e6), digits = 3)
+VEP.intron_TMB <- round(nrow(VEP_data[region_type == "intron"]) / (GRCh37.region_sizes$introns_size / 1e6), digits = 3)
+VEP.exon_TMB.syn <- round(nrow(VEP_data[region_type == "exon" | region_type == "splice"]) / (GRCh37.region_sizes$exons_size / 1e6), digits = 3)
+VEP.exon_TMB.no_syn <- round(nrow(VEP_data[region_type == "exon" & Consequence != "synonymous_variant" | region_type == "splice"]) / (GRCh37.region_sizes$exons_size / 1e6), digits = 3)
 
 VEP.TMBs_list.no_syn <- c(VEP.intergenic_TMB, VEP.intron_TMB, VEP.regulatory_TMB, VEP.exon_TMB.no_syn, VEP.splice_TMB)
 VEP.TMBs_list.syn <- c(VEP.intergenic_TMB, VEP.intron_TMB, VEP.regulatory_TMB, VEP.exon_TMB.syn, VEP.splice_TMB)
@@ -256,8 +233,7 @@ if(round(sum(VEP.TMBs_list.no_syn), digits = 3) != VEP.WGS_TMB.no_syn) {
     list(
       setNames(c(VEP.WGS_TMB.no_syn, VEP.TMBs_list.no_syn), c("total_WGS_TMB", paste0(names(region_types), "_WGS_TMB"))),
       setNames(sapply(1:length(VEP.TMBs_list.no_syn), function(x) round(VEP.TMBs_list.no_syn[x]/VEP.WGS_TMB.no_syn, digits = 4)), paste0(names(region_types), "_WGS_TMB_ratio"))), 
-    c("WGS_TMBs_no_synonymous", "WGS_TMBs_no_synonymous_ratios")
-  )
+    nm = c("WGS_TMBs_no_synonymous", "WGS_TMBs_no_synonymous_ratios"))
 }
 
 # Making a table for WGS and region based TMB calculated above. Including synonymous variants.
@@ -268,12 +244,48 @@ if(round(sum(VEP.TMBs_list.syn), digits = 3) != VEP.WGS_TMB.syn) {
     list(
       setNames(c(VEP.WGS_TMB.syn, VEP.TMBs_list.syn), c("total_WGS_TMB", paste0(names(region_types), "_WGS_TMB"))),
       setNames(sapply(1:length(VEP.TMBs_list.syn), function(x) round(VEP.TMBs_list.syn[x]/VEP.WGS_TMB.syn, digits = 4)), paste0(names(region_types), "_WGS_TMB_ratio"))), 
-    c("WGS_TMBs_synonymous", "WGS_TMBs_synonymous_ratios")
-  )
+    nm = c("WGS_TMBs_synonymous", "WGS_TMBs_synonymous_ratios"))
 }
 
 VEP.TMB_records[[glue("NSLC_{Patient}")]] = c(VEP.TMBs.no_syn, VEP.TMBs.syn)
 
+
+## *** Option 2: TMB calculated according to the whole genome size, e.g. intron TMB with intron variants and genome size.
+# This option is representing the different TMBs as a proportion of the whole genome TMB, i.e. their weights on the WGS TMB.
+VEP.WGS.intergenic_TMB <- round(nrow(VEP_data[region_type == "intergenic"]) / (GRCh37.region_sizes$genome_size / 1e6), digits = 3)
+VEP.WGS.intron_TMB <- round(nrow(VEP_data[region_type == "intron"]) / (GRCh37.region_sizes$genome_size / 1e6), digits = 3)
+VEP.WGS.regulatory_TMB <- round(nrow(VEP_data[region_type == "regulatory"]) / (GRCh37.region_sizes$genome_size / 1e6), digits = 3)
+VEP.WGS.exon_TMB.syn <- round(nrow(VEP_data[region_type == "exon"]) / (GRCh37.region_sizes$genome_size / 1e6), digits = 3)
+VEP.WGS.exon_TMB.no_syn <- round(nrow(VEP_data[region_type == "exon" & Consequence != "synonymous_variant"]) / (GRCh37.region_sizes$genome_size / 1e6), digits = 3)
+VEP.WGS.splice_TMB <- round(nrow(VEP_data[region_type == "splice"]) / (GRCh37.region_sizes$genome_size / 1e6), digits = 3)
+
+VEP.WGS.TMBs_list.no_syn <- c(VEP.WGS.intergenic_TMB, VEP.WGS.intron_TMB, VEP.WGS.regulatory_TMB, VEP.WGS.exon_TMB.no_syn, VEP.WGS.splice_TMB)
+VEP.WGS.TMBs_list.syn <- c(VEP.WGS.intergenic_TMB, VEP.WGS.intron_TMB, VEP.WGS.regulatory_TMB, VEP.WGS.exon_TMB.syn, VEP.WGS.splice_TMB)
+
+# Making a table for WGS and region based TMB calculated above. Not including synonymous variants.
+if(round(sum(VEP.WGS.TMBs_list.no_syn), digits = 3) != VEP.WGS_TMB.no_syn) {
+  message("The WGS TMB with no synonymous_variant is incomplete. Check that the variant count from VEP_data is correct.")
+} else {
+  VEP.WGS.TMBs.no_syn <- setNames(
+    list(
+      setNames(c(VEP.WGS_TMB.no_syn, VEP.WGS.TMBs_list.no_syn), c("total_WGS_TMB", paste0(names(region_types), "_WGS_TMB"))),
+      setNames(sapply(1:length(VEP.WGS.TMBs_list.no_syn), function(x) round(VEP.WGS.TMBs_list.no_syn[x]/VEP.WGS_TMB.no_syn, digits = 4)), paste0(names(region_types), "_WGS_TMB_ratio"))), 
+   nm = c("WGS_TMBs_no_synonymous", "WGS_TMBs_no_synonymous_ratios"))
+}
+
+# Making a table for WGS and region based TMB calculated above. Including synonymous variants.
+if(round(sum(VEP.WGS.TMBs_list.syn), digits = 3) != VEP.WGS_TMB.syn) {
+  message("The WGS TMB with no synonymous_variant is incomplete. Check that the variant count from VEP_data is correct.")
+} else {
+  VEP.WGS.TMBs.syn <- setNames(
+    list(
+      setNames(c(VEP.WGS_TMB.syn, VEP.WGS.TMBs_list.syn), c("total_WGS_TMB", paste0(names(region_types), "_WGS_TMB"))),
+      setNames(sapply(1:length(VEP.WGS.TMBs_list.syn), function(x) round(VEP.WGS.TMBs_list.syn[x]/VEP.WGS_TMB.syn, digits = 4)), paste0(names(region_types), "_WGS_TMB_ratio"))), 
+   nm = c("WGS_TMBs_synonymous", "WGS_TMBs_synonymous_ratios"))
+}
+
+VEP.TMB_records[[glue("NSLC_{Patient}")]] = c(VEP.WGS.TMBs.no_syn, VEP.WGS.TMBs.syn)
+VEP.TMB_records
 
 ################################################################################
 ####################### TMB according to mutation types ########################
