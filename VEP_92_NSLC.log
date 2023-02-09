@@ -1434,3 +1434,291 @@ No ensembl_metadata database found
 No production database or adaptor found
 2023-01-24 20:53:27 - INFO: BAM-edited cache detected, enabling --use_transcript_ref; use --use_given_ref to override this
 2023-01-24 20:53:39 - INFO: Database will be accessed when using --use_transcript_ref
+
+Analysing Patient 0003 with VEP.
+Will only load v108 databases
+Species 'homo_sapiens' loaded from database 'homo_sapiens_core_108_37'
+Species 'homo_sapiens' loaded from database 'homo_sapiens_cdna_108_37'
+Species 'homo_sapiens' loaded from database 'homo_sapiens_otherfeatures_108_37'
+Species 'homo_sapiens' loaded from database 'homo_sapiens_rnaseq_108_37'
+homo_sapiens_variation_108_37 loaded
+homo_sapiens_funcgen_108_37 loaded
+No ancestral database found
+No ontology database found
+ensembl_taxonomy API not found - ignoring 
+No ensembl_metadata database found
+No production database or adaptor found
+2023-02-07 18:03:51 - INFO: BAM-edited cache detected, enabling --use_transcript_ref; use --use_given_ref to override this
+2023-02-07 18:03:51 - INFO: Database will be accessed when using --use_transcript_ref
+
+Analysing Patient 0004 with VEP.
+Will only load v108 databases
+Species 'homo_sapiens' loaded from database 'homo_sapiens_core_108_37'
+Species 'homo_sapiens' loaded from database 'homo_sapiens_cdna_108_37'
+Species 'homo_sapiens' loaded from database 'homo_sapiens_otherfeatures_108_37'
+Species 'homo_sapiens' loaded from database 'homo_sapiens_rnaseq_108_37'
+homo_sapiens_variation_108_37 loaded
+homo_sapiens_funcgen_108_37 loaded
+No ancestral database found
+No ontology database found
+ensembl_taxonomy API not found - ignoring 
+No ensembl_metadata database found
+No production database or adaptor found
+2023-02-07 18:28:01 - INFO: BAM-edited cache detected, enabling --use_transcript_ref; use --use_given_ref to override this
+2023-02-07 18:28:02 - INFO: Database will be accessed when using --use_transcript_ref
+
+Analysing Patient 0008 with VEP.
+Will only load v108 databases
+Species 'homo_sapiens' loaded from database 'homo_sapiens_core_108_37'
+Species 'homo_sapiens' loaded from database 'homo_sapiens_cdna_108_37'
+Species 'homo_sapiens' loaded from database 'homo_sapiens_otherfeatures_108_37'
+Species 'homo_sapiens' loaded from database 'homo_sapiens_rnaseq_108_37'
+homo_sapiens_variation_108_37 loaded
+homo_sapiens_funcgen_108_37 loaded
+No ancestral database found
+No ontology database found
+ensembl_taxonomy API not found - ignoring 
+No ensembl_metadata database found
+No production database or adaptor found
+2023-02-07 19:07:34 - INFO: BAM-edited cache detected, enabling --use_transcript_ref; use --use_given_ref to override this
+2023-02-07 19:07:34 - INFO: Database will be accessed when using --use_transcript_ref
+
+Analysing Patient 0015 with VEP.
+Will only load v108 databases
+Species 'homo_sapiens' loaded from database 'homo_sapiens_core_108_37'
+Species 'homo_sapiens' loaded from database 'homo_sapiens_cdna_108_37'
+Species 'homo_sapiens' loaded from database 'homo_sapiens_otherfeatures_108_37'
+Species 'homo_sapiens' loaded from database 'homo_sapiens_rnaseq_108_37'
+homo_sapiens_variation_108_37 loaded
+homo_sapiens_funcgen_108_37 loaded
+No ancestral database found
+No ontology database found
+ensembl_taxonomy API not found - ignoring 
+No ensembl_metadata database found
+No production database or adaptor found
+2023-02-07 19:28:01 - INFO: BAM-edited cache detected, enabling --use_transcript_ref; use --use_given_ref to override this
+2023-02-07 19:28:01 - INFO: Database will be accessed when using --use_transcript_ref
+
+Analysing Patient 0017 with VEP.
+Will only load v108 databases
+Species 'homo_sapiens' loaded from database 'homo_sapiens_core_108_37'
+Species 'homo_sapiens' loaded from database 'homo_sapiens_cdna_108_37'
+Species 'homo_sapiens' loaded from database 'homo_sapiens_otherfeatures_108_37'
+Species 'homo_sapiens' loaded from database 'homo_sapiens_rnaseq_108_37'
+homo_sapiens_variation_108_37 loaded
+homo_sapiens_funcgen_108_37 loaded
+No ancestral database found
+No ontology database found
+ensembl_taxonomy API not found - ignoring 
+No ensembl_metadata database found
+No production database or adaptor found
+2023-02-07 19:45:23 - INFO: BAM-edited cache detected, enabling --use_transcript_ref; use --use_given_ref to override this
+2023-02-07 19:45:23 - INFO: Database will be accessed when using --use_transcript_ref
+
+Analysing Patient 0026 with VEP.
+Will only load v108 databases
+Species 'homo_sapiens' loaded from database 'homo_sapiens_core_108_37'
+Species 'homo_sapiens' loaded from database 'homo_sapiens_cdna_108_37'
+Species 'homo_sapiens' loaded from database 'homo_sapiens_otherfeatures_108_37'
+Species 'homo_sapiens' loaded from database 'homo_sapiens_rnaseq_108_37'
+homo_sapiens_variation_108_37 loaded
+homo_sapiens_funcgen_108_37 loaded
+No ancestral database found
+No ontology database found
+ensembl_taxonomy API not found - ignoring 
+No ensembl_metadata database found
+No production database or adaptor found
+2023-02-07 20:12:45 - INFO: BAM-edited cache detected, enabling --use_transcript_ref; use --use_given_ref to override this
+2023-02-07 20:12:45 - INFO: Database will be accessed when using --use_transcript_ref
+
+Analysing Patient 0029 with VEP.
+Will only load v108 databases
+Species 'homo_sapiens' loaded from database 'homo_sapiens_core_108_37'
+Species 'homo_sapiens' loaded from database 'homo_sapiens_cdna_108_37'
+Species 'homo_sapiens' loaded from database 'homo_sapiens_otherfeatures_108_37'
+Species 'homo_sapiens' loaded from database 'homo_sapiens_rnaseq_108_37'
+homo_sapiens_variation_108_37 loaded
+homo_sapiens_funcgen_108_37 loaded
+No ancestral database found
+No ontology database found
+ensembl_taxonomy API not found - ignoring 
+No ensembl_metadata database found
+No production database or adaptor found
+2023-02-07 20:33:33 - INFO: BAM-edited cache detected, enabling --use_transcript_ref; use --use_given_ref to override this
+2023-02-07 20:33:34 - INFO: Database will be accessed when using --use_transcript_ref
+
+Analysing Patient 0037 with VEP.
+Will only load v108 databases
+Species 'homo_sapiens' loaded from database 'homo_sapiens_core_108_37'
+Species 'homo_sapiens' loaded from database 'homo_sapiens_cdna_108_37'
+Species 'homo_sapiens' loaded from database 'homo_sapiens_otherfeatures_108_37'
+Species 'homo_sapiens' loaded from database 'homo_sapiens_rnaseq_108_37'
+homo_sapiens_variation_108_37 loaded
+homo_sapiens_funcgen_108_37 loaded
+No ancestral database found
+No ontology database found
+ensembl_taxonomy API not found - ignoring 
+No ensembl_metadata database found
+No production database or adaptor found
+2023-02-07 21:00:44 - INFO: BAM-edited cache detected, enabling --use_transcript_ref; use --use_given_ref to override this
+2023-02-07 21:00:44 - INFO: Database will be accessed when using --use_transcript_ref
+
+Analysing Patient 0049 with VEP.
+Will only load v108 databases
+Species 'homo_sapiens' loaded from database 'homo_sapiens_core_108_37'
+Species 'homo_sapiens' loaded from database 'homo_sapiens_cdna_108_37'
+Species 'homo_sapiens' loaded from database 'homo_sapiens_otherfeatures_108_37'
+Species 'homo_sapiens' loaded from database 'homo_sapiens_rnaseq_108_37'
+homo_sapiens_variation_108_37 loaded
+homo_sapiens_funcgen_108_37 loaded
+No ancestral database found
+No ontology database found
+ensembl_taxonomy API not found - ignoring 
+No ensembl_metadata database found
+No production database or adaptor found
+2023-02-07 21:17:41 - INFO: BAM-edited cache detected, enabling --use_transcript_ref; use --use_given_ref to override this
+2023-02-07 21:17:41 - INFO: Database will be accessed when using --use_transcript_ref
+
+Analysing Patient 0058 with VEP.
+Will only load v108 databases
+Species 'homo_sapiens' loaded from database 'homo_sapiens_core_108_37'
+Species 'homo_sapiens' loaded from database 'homo_sapiens_cdna_108_37'
+Species 'homo_sapiens' loaded from database 'homo_sapiens_otherfeatures_108_37'
+Species 'homo_sapiens' loaded from database 'homo_sapiens_rnaseq_108_37'
+homo_sapiens_variation_108_37 loaded
+homo_sapiens_funcgen_108_37 loaded
+No ancestral database found
+No ontology database found
+ensembl_taxonomy API not found - ignoring 
+No ensembl_metadata database found
+No production database or adaptor found
+2023-02-07 21:38:48 - INFO: BAM-edited cache detected, enabling --use_transcript_ref; use --use_given_ref to override this
+2023-02-07 21:38:48 - INFO: Database will be accessed when using --use_transcript_ref
+
+Analysing Patient 0062 with VEP.
+Will only load v108 databases
+Species 'homo_sapiens' loaded from database 'homo_sapiens_core_108_37'
+Species 'homo_sapiens' loaded from database 'homo_sapiens_cdna_108_37'
+Species 'homo_sapiens' loaded from database 'homo_sapiens_otherfeatures_108_37'
+Species 'homo_sapiens' loaded from database 'homo_sapiens_rnaseq_108_37'
+homo_sapiens_variation_108_37 loaded
+homo_sapiens_funcgen_108_37 loaded
+No ancestral database found
+No ontology database found
+ensembl_taxonomy API not found - ignoring 
+No ensembl_metadata database found
+No production database or adaptor found
+2023-02-07 21:58:38 - INFO: BAM-edited cache detected, enabling --use_transcript_ref; use --use_given_ref to override this
+2023-02-07 21:58:38 - INFO: Database will be accessed when using --use_transcript_ref
+
+Analysing Patient 0071 with VEP.
+Will only load v108 databases
+Species 'homo_sapiens' loaded from database 'homo_sapiens_core_108_37'
+Species 'homo_sapiens' loaded from database 'homo_sapiens_cdna_108_37'
+Species 'homo_sapiens' loaded from database 'homo_sapiens_otherfeatures_108_37'
+Species 'homo_sapiens' loaded from database 'homo_sapiens_rnaseq_108_37'
+homo_sapiens_variation_108_37 loaded
+homo_sapiens_funcgen_108_37 loaded
+No ancestral database found
+No ontology database found
+ensembl_taxonomy API not found - ignoring 
+No ensembl_metadata database found
+No production database or adaptor found
+2023-02-07 22:16:50 - INFO: BAM-edited cache detected, enabling --use_transcript_ref; use --use_given_ref to override this
+2023-02-07 22:16:50 - INFO: Database will be accessed when using --use_transcript_ref
+
+Analysing Patient 0081 with VEP.
+Will only load v108 databases
+Species 'homo_sapiens' loaded from database 'homo_sapiens_core_108_37'
+Species 'homo_sapiens' loaded from database 'homo_sapiens_cdna_108_37'
+Species 'homo_sapiens' loaded from database 'homo_sapiens_otherfeatures_108_37'
+Species 'homo_sapiens' loaded from database 'homo_sapiens_rnaseq_108_37'
+homo_sapiens_variation_108_37 loaded
+homo_sapiens_funcgen_108_37 loaded
+No ancestral database found
+No ontology database found
+ensembl_taxonomy API not found - ignoring 
+No ensembl_metadata database found
+No production database or adaptor found
+2023-02-07 22:46:25 - INFO: BAM-edited cache detected, enabling --use_transcript_ref; use --use_given_ref to override this
+2023-02-07 22:46:25 - INFO: Database will be accessed when using --use_transcript_ref
+
+Analysing Patient 0085 with VEP.
+Will only load v108 databases
+Species 'homo_sapiens' loaded from database 'homo_sapiens_core_108_37'
+Species 'homo_sapiens' loaded from database 'homo_sapiens_cdna_108_37'
+Species 'homo_sapiens' loaded from database 'homo_sapiens_otherfeatures_108_37'
+Species 'homo_sapiens' loaded from database 'homo_sapiens_rnaseq_108_37'
+homo_sapiens_variation_108_37 loaded
+homo_sapiens_funcgen_108_37 loaded
+No ancestral database found
+No ontology database found
+ensembl_taxonomy API not found - ignoring 
+No ensembl_metadata database found
+No production database or adaptor found
+2023-02-07 23:10:59 - INFO: BAM-edited cache detected, enabling --use_transcript_ref; use --use_given_ref to override this
+2023-02-07 23:10:59 - INFO: Database will be accessed when using --use_transcript_ref
+
+Analysing Patient 0087 with VEP.
+Will only load v108 databases
+Species 'homo_sapiens' loaded from database 'homo_sapiens_core_108_37'
+Species 'homo_sapiens' loaded from database 'homo_sapiens_cdna_108_37'
+Species 'homo_sapiens' loaded from database 'homo_sapiens_otherfeatures_108_37'
+Species 'homo_sapiens' loaded from database 'homo_sapiens_rnaseq_108_37'
+homo_sapiens_variation_108_37 loaded
+homo_sapiens_funcgen_108_37 loaded
+No ancestral database found
+No ontology database found
+ensembl_taxonomy API not found - ignoring 
+No ensembl_metadata database found
+No production database or adaptor found
+2023-02-07 23:28:44 - INFO: BAM-edited cache detected, enabling --use_transcript_ref; use --use_given_ref to override this
+2023-02-07 23:28:44 - INFO: Database will be accessed when using --use_transcript_ref
+
+Analysing Patient 0088 with VEP.
+Will only load v108 databases
+Species 'homo_sapiens' loaded from database 'homo_sapiens_core_108_37'
+Species 'homo_sapiens' loaded from database 'homo_sapiens_cdna_108_37'
+Species 'homo_sapiens' loaded from database 'homo_sapiens_otherfeatures_108_37'
+Species 'homo_sapiens' loaded from database 'homo_sapiens_rnaseq_108_37'
+homo_sapiens_variation_108_37 loaded
+homo_sapiens_funcgen_108_37 loaded
+No ancestral database found
+No ontology database found
+ensembl_taxonomy API not found - ignoring 
+No ensembl_metadata database found
+No production database or adaptor found
+2023-02-08 00:08:17 - INFO: BAM-edited cache detected, enabling --use_transcript_ref; use --use_given_ref to override this
+2023-02-08 00:08:17 - INFO: Database will be accessed when using --use_transcript_ref
+
+Analysing Patient 0131 with VEP.
+Will only load v108 databases
+Species 'homo_sapiens' loaded from database 'homo_sapiens_core_108_37'
+Species 'homo_sapiens' loaded from database 'homo_sapiens_cdna_108_37'
+Species 'homo_sapiens' loaded from database 'homo_sapiens_otherfeatures_108_37'
+Species 'homo_sapiens' loaded from database 'homo_sapiens_rnaseq_108_37'
+homo_sapiens_variation_108_37 loaded
+homo_sapiens_funcgen_108_37 loaded
+No ancestral database found
+No ontology database found
+ensembl_taxonomy API not found - ignoring 
+No ensembl_metadata database found
+No production database or adaptor found
+2023-02-08 00:29:31 - INFO: BAM-edited cache detected, enabling --use_transcript_ref; use --use_given_ref to override this
+2023-02-08 00:29:31 - INFO: Database will be accessed when using --use_transcript_ref
+
+Analysing Patient 0135 with VEP.
+Will only load v108 databases
+Species 'homo_sapiens' loaded from database 'homo_sapiens_core_108_37'
+Species 'homo_sapiens' loaded from database 'homo_sapiens_cdna_108_37'
+Species 'homo_sapiens' loaded from database 'homo_sapiens_otherfeatures_108_37'
+Species 'homo_sapiens' loaded from database 'homo_sapiens_rnaseq_108_37'
+homo_sapiens_variation_108_37 loaded
+homo_sapiens_funcgen_108_37 loaded
+No ancestral database found
+No ontology database found
+ensembl_taxonomy API not found - ignoring 
+No ensembl_metadata database found
+No production database or adaptor found
+2023-02-08 00:50:49 - INFO: BAM-edited cache detected, enabling --use_transcript_ref; use --use_given_ref to override this
+2023-02-08 00:50:49 - INFO: Database will be accessed when using --use_transcript_ref
