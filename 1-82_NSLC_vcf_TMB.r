@@ -210,8 +210,7 @@ for(Patient in Patients_list) {
   
   
   # Final data set for each patient
-  #assign(glue("VEP_data.NSLC_{Patient}"), VEP_data)
-  #fwrite(VEP_data.NSLC_0001, glue("Data/VEP_92_NSLC/VEP_NSLC_{Patient}.csv"))
+  fwrite(VEP_data, glue("Data/VEP_82_NSLC_TMB/VEP_NSLC-{Patient}.csv"))
   
   
   
@@ -330,9 +329,8 @@ for(Patient in Patients_list) {
   #   E.g. VEP.TMB_records[["NSLC_0001"]]$TMB_by_region$exons_TMB
   
   VEP.TMB_records <- rbindlist(list(VEP.TMB_records, c(setNames(list(glue("NSLC-{Patient}")), "Patient_ID"), all.TMB.regions, all.TMB.mutations)))
+  fwrite(VEP.TMB_records, glue("Data/VEP_82_NSLC_TMB/VEP_NSLC-{Patient}_TMB.csv"))
 } # End of main loop
-
-lapply(ls(VEP.TMB_records), function(x) VEP.TMB_records[[x]])
 
 
 ################################################################################
