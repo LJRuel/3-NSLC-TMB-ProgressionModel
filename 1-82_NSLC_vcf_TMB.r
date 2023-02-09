@@ -1,10 +1,6 @@
 
 ## TODO
 # - Get CNV data -> need BAM files.
-# - Make a graph of all variants with a Manhattan-like style plot (one for each chromosome?).
-#   One color per region type.
-# - Make a similar graph that combines all the patients.
-# - Compae TMBs with SBS signatures
 
 ## Questions
 # - Est-ce qu'on garde les synonymnous variants?
@@ -136,6 +132,8 @@ GRCh37.region_sizes <- as.data.table(setNames(list(3129589526, 102540627, 137843
 
 #  Values are in bp. TMB requires values to be in megabase, therefore a simple division by 10^6 is needed when calculating TMBs.
 GRCh37.region_sizes <- round(GRCh37.region_sizes/1e6, digits = 2)
+
+
 
 ################################################################################
 ################################## Main loop ###################################
