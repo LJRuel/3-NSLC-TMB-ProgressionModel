@@ -78,8 +78,11 @@ clin_data <- clin_data[histology == 3, ]
 ################################################################################
 
 # References: https://gist.github.com/crazyhottommy/4681a30700b2c0c1ee02cbc875e7c4e9
-# The following code does not need to be run again. The relevent information is 
-# contained in "GRCh37.region_sizes" variaable at the end of this section.
+# The following code does not need to be run again. The relevant information is 
+# contained in "GRCh37.region_sizes" variable at the end of this section.
+# If the need comes to compute the region sizes again, simply remove comment marks 
+# with Ctrl + Shift + C in the relevant code lines, up to 
+# "Final sizes used for TMB calculation" comment.
 
 # ah = AnnotationHub()
 # #AnnotationHub::query(ah, c('gtf', 'Homo_sapiens', 'GRCh37'))
@@ -114,7 +117,7 @@ clin_data <- clin_data[histology == 3, ]
 # intergenic <- GenomicRanges::setdiff(chrom_grngs, collapsed_tx)
 # intergenic_size <- as.double(sum(width(intergenic)))
 # 
-# # 5' and 3' UTR 
+# # 5' and 3' UTR
 # five_UTR <- fiveUTRsByTranscript(GRCh37.txdb) %>% unlist() %>% GenomicRanges::reduce()
 # sum(width(five_UTR))
 # 
@@ -124,11 +127,20 @@ clin_data <- clin_data[histology == 3, ]
 # ## total genome size: 3129589526 bp
 # genome_size <- sum(c(exons_size, introns_size, intergenic_size))
 
+## Final sizes used for TMB calculation.
+if(exists("genome_size"))
+{
+  # Calculated region sizes above
+  GRCh37.region_sizes <- as.data.table(setNames(list(genome_size, exons_size, introns_size, intergenic_size),
+                                                list("genome_size", "exons_size",
+                                                     "introns_size", "intergenic_size")))
+} else {
+  # Precalculated region sizes
+  GRCh37.region_sizes <- as.data.table(setNames(list(3129589526, 102540627, 1378434449, 1648614450),
+                                                list("genome_size", "exons_size",
+                                                     "introns_size", "intergenic_size")))
+}
 
-## Final sizes used for TMB calculation. 
-GRCh37.region_sizes <- as.data.table(setNames(list(3129589526, 102540627, 1378434449, 1648614450), 
-                                              list("genome_size", "exons_size", 
-                                                   "introns_size", "intergenic_size")))
 
 #  Values are in bp. TMB requires values to be in megabase, therefore a simple division by 10^6 is needed when calculating TMBs.
 GRCh37.region_sizes <- round(GRCh37.region_sizes/1e6, digits = 2)
