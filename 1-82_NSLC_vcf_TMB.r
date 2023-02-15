@@ -21,6 +21,7 @@ library(data.table)
 library(xlsx)
 library(glue)
 library(TxDb.Hsapiens.UCSC.hg19.knownGene)
+library(biomaRt)
 
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 
@@ -124,6 +125,9 @@ clin_data <- clin_data[histology == 3, ]
 # ## total genome size: 3129589526 bp
 # genome_size <- sum(c(exons_size, introns_size, intergenic_size))
 
+## regulatory regions
+ensembl_reg = useEnsembl(biomart="regulation", GRCh=37)
+head(listDatasets(ensembl_reg))
 
 ## Final region sizes used for TMB calculation. 
 GRCh37.region_sizes <- as.data.table(setNames(list(3129589526, 102540627, 1378434449, 1648614450), 
@@ -203,13 +207,20 @@ for(Patient in Patients_list) {
     mutate(mutation_type = case_when(nchar(REF) == nchar(ALT) ~ "SNV",
                                      nchar(REF) > nchar(ALT) ~ "deletion",
                                      nchar(REF) < nchar(ALT) ~ "insertion"))
+  
+  # Adding end position of variant. Relevant for deletion.
+  VEP_data <- VEP_data %>%
+    mutate(END_POS = case_when(mutation_type == "SNV" ~ POS,
+                               mutation_type == "insertion" ~ POS,
+                               mutation_type == "deletion" ~ POS+nchar(REF))) %>% relocate(END_POS, .after = POS)
+  
   # Bringing mutation_type column next to region_type column
   setcolorder(VEP_data, colnames(VEP_data)[c(1:14, ncol(VEP_data), 15:(ncol(VEP_data)-1))])
   
   
   # Final data set for each patient
   fwrite(VEP_data, glue("Data/VEP_82_NSLC_TMB/VEP_NSLC-{Patient}.csv"))
-  
+ 
   
   
   ##############################################################################
