@@ -1435,6 +1435,12 @@ No production database or adaptor found
 2023-01-24 20:53:27 - INFO: BAM-edited cache detected, enabling --use_transcript_ref; use --use_given_ref to override this
 2023-01-24 20:53:39 - INFO: Database will be accessed when using --use_transcript_ref
 
+################################################################################################################################
+################################################################################################################################
+################################################################################################################################
+VEP annotation redo on some subjects as the VEP output was incomplete
+
+
 Analysing Patient 0003 with VEP.
 Will only load v108 databases
 Species 'homo_sapiens' loaded from database 'homo_sapiens_core_108_37'
