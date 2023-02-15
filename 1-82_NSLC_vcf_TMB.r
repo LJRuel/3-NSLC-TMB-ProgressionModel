@@ -78,7 +78,7 @@ clin_data <- clin_data[histology == 3, ]
 ################################################################################
 
 # References: https://gist.github.com/crazyhottommy/4681a30700b2c0c1ee02cbc875e7c4e9
-# The following code does not need to be run again. The relevent information is 
+# The following code does not need to be run again. The relevent information is
 # contained in "GRCh37.region_sizes" variaable at the end of this section.
 
 # ah = AnnotationHub()
@@ -114,7 +114,7 @@ clin_data <- clin_data[histology == 3, ]
 # intergenic <- GenomicRanges::setdiff(chrom_grngs, collapsed_tx)
 # intergenic_size <- as.double(sum(width(intergenic)))
 # 
-# # 5' and 3' UTR 
+# # 5' and 3' UTR
 # five_UTR <- fiveUTRsByTranscript(GRCh37.txdb) %>% unlist() %>% GenomicRanges::reduce()
 # sum(width(five_UTR))
 # 
@@ -125,12 +125,12 @@ clin_data <- clin_data[histology == 3, ]
 # genome_size <- sum(c(exons_size, introns_size, intergenic_size))
 
 
-## Final sizes used for TMB calculation. 
+## Final region sizes used for TMB calculation. 
 GRCh37.region_sizes <- as.data.table(setNames(list(3129589526, 102540627, 1378434449, 1648614450), 
                                               list("genome_size", "exons_size", 
                                                    "introns_size", "intergenic_size")))
 
-#  Values are in bp. TMB requires values to be in megabase, therefore a simple division by 10^6 is needed when calculating TMBs.
+## Values are in bp. TMB requires values to be in megabase, therefore a simple division by 10^6 is needed when calculating TMBs.
 GRCh37.region_sizes <- round(GRCh37.region_sizes/1e6, digits = 2)
 
 
@@ -329,39 +329,4 @@ for(Patient in Patients_list) {
   VEP.TMB_records <- rbindlist(list(VEP.TMB_records, c(setNames(list(glue("NSLC-{Patient}")), "Patient_ID"), all.TMB.regions, all.TMB.mutations)))
   fwrite(VEP.TMB_records, glue("Data/VEP_82_NSLC_TMB/VEP_NSLC-{Patient}_TMB.csv"))
 } # End of main loop
-
-
-################################################################################
-################################### ARCHIVES ###################################
-################################################################################
-
-# ## Comparing GRanges annotation with VEP annotations
-# if (!require("BiocManager", quietly = TRUE))
-#   install.packages("BiocManager")
-# #BiocManager::install("GenomicRanges")
-# #BiocManager::install("VariantAnnotation")
-# #BiocManager::install("TxDb.Hsapiens.UCSC.hg19.knownGene")
-# #BiocManager::install("BSgenome.Hsapiens.UCSC.hg19")
-# 
-# library(VariantAnnotation)
-# library(BSgenome.Hsapiens.UCSC.hg19)
-# BSgenome <- BSgenome.Hsapiens.UCSC.hg19
-# 
-# vcf <- readVcf(glue("/mnt/sda2/TMB/Data/92_patients_NSLC_filtered_VCFS/NSLC_{Patient}.vcf"), "hg19")
-# vcf <- keepSeqlevels(vcf, c(1:22, "X", "Y"), pruning.mode = "coarse")
-# seqlevels(vcf) <- paste0("chr", c(1:22, "X", "Y"))
-# vcf.range <- rowRanges(vcf)
-# 
-# all.variants <- locateVariants(vcf.range, txdb, AllVariants())
-# mcols(all.variants)[c("LOCATION", "PRECEDEID", "FOLLOWID")]
-# which(all.variants == trim(all.variants))
-# which(end(all.variants) > seqlengths(BSgenome)[as.character(seqnames(all.variants))])
-# 
-# # Did any coding variants match more than one gene?
-# splt.match <- split(mcols(all.variants)$GENEID, mcols(all.variants)$QUERYID)
-# table(sapply(splt.match, function(x) length(unique(x)) > 1))
-# 
-# # Summarize the number of variants by gene ID
-# splt.genes <- split(mcols(all.variants)$QUERYID, mcols(all.variants)$GENEID)
-# sapply(splt.genes, function(x) length(unique(x)))
 
