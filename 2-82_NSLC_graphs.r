@@ -5,8 +5,6 @@
 # - Make a similar graph that combines all the patients.
 # - Compare TMBs with SBS signatures
 
-BiocManager::install("karyoploteR")
-
 library(GenomicFeatures)
 library(tidyverse)
 library(data.table)
