@@ -6,14 +6,6 @@
 # - Est-ce qu'on garde les synonymnous variants?
 # - Est-ce qu'on garde les pseudogenes dans les variants annotes?
 
-if (!require("BiocManager", quietly = TRUE))
-  install.packages("BiocManager")
-#BiocManager::install("AnnotationHub")
-#BiocManager::install("TxDb.Hsapiens.UCSC.hg19.knownGene")
-#BiocManager::install("biomaRt")
-#BiocManager::install("ensembldb")
-#BiocManager::install("EnsDb.Hsapiens.v75")
-
 library(GenomicFeatures)
 library(AnnotationHub)
 library(tidyverse)
@@ -22,6 +14,8 @@ library(xlsx)
 library(glue)
 library(TxDb.Hsapiens.UCSC.hg19.knownGene)
 library(EnsDb.Hsapiens.v75)
+library(biomaRt)
+library(karyoploteR)
 
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 
@@ -32,19 +26,19 @@ setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 # Mutation types annotated by VEP are available here: https://grch37.ensembl.org/info/genome/variation/prediction/predicted_data.html
 region_types <- list()
 region_types[["exons"]] <- c("non_coding_transcript_exon_variant", 
-                            "missense_variant", 
-                            "synonymous_variant", 
-                            "3_prime_UTR_variant", 
-                            "5_prime_UTR_variant", 
-                            "coding_sequence_variant", 
-                            "frameshift_variant", 
-                            "stop_gained",
-                            "stop_lost",
-                            "inframe_deletion",
-                            "inframe_insertion",
-                            "start_lost",
-                            "stop_retained_variant",
-                            "protein_altering_variant")
+                             "missense_variant", 
+                             "synonymous_variant", 
+                             "3_prime_UTR_variant", 
+                             "5_prime_UTR_variant", 
+                             "coding_sequence_variant", 
+                             "frameshift_variant", 
+                             "stop_gained",
+                             "stop_lost",
+                             "inframe_deletion",
+                             "inframe_insertion",
+                             "start_lost",
+                             "stop_retained_variant",
+                             "protein_altering_variant")
 
 region_types[["splice"]] <- c("splice_region_variant", 
                               "splice_donor_variant", 
@@ -54,7 +48,7 @@ region_types[["splice"]] <- c("splice_region_variant",
                               "splice_donor_5th_base_variant")
 
 region_types[["introns"]] <- c("intron_variant", 
-                              "non_coding_transcript_variant")
+                               "non_coding_transcript_variant")
 
 region_types[["regulatory"]] <- c("regulatory_region_variant", 
                                   "TF_binding_site_variant",
@@ -82,88 +76,141 @@ clin_data <- clin_data[histology == 3, ]
 # To run this section again, select the commented lines and remove the 
 # comment marks with Ctrl+Shift+C
 
-ah = AnnotationHub()
-#AnnotationHub::query(ah, c('gtf', 'Homo_sapiens', 'GRCh37'))
-GRCh37.gtf<- ah[['AH10684']]
-
-
-## subset the gtf files for only protein_coding genes and lincRNAs
-GRCh37.gtf<- GRCh37.gtf[GRCh37.gtf$gene_biotype %in% c('protein_coding', 'lincRNA')]
-table(GRCh37.gtf$gene_biotype)
-
-## make a txdb and keep conventional chromosomes
-GRCh37.txdb <- makeTxDbFromGRanges(GRCh37.gtf)
-GRCh37.txdb <- keepSeqlevels(GRCh37.txdb, c(1:22, 'X', 'Y'), pruning.mode = 'coarse')
-
-
-## cds (not compiled in the total genome size because included in exons)
-cds <- cdsBy(GRCh37.txdb, 'gene') %>% unlist() %>% unstrand() %>% GenomicRanges::reduce()
-sum(width(cds))
-
-
-## exons: 101,578,353 bp
-exons <- exonicParts(GRCh37.txdb) %>% unstrand() %>% GenomicRanges::reduce() 
-exons_size <- as.double(sum(width(exons)))
-mcols(exons)$region <- "exons"
-
-
-## introns: 1,345,484,609 bp
-# The overlap with some exons is also removed by GenomicRanges::setdiff() function.
-introns <- intronicParts(GRCh37.txdb) %>% unstrand() %>% GenomicRanges::setdiff(., exons)
-introns_size <- as.double(sum(width(introns)))
-mcols(introns)$region <- "introns"
-
-
-## regulatory regions: 221,273,310 bp
-# Gathering regulatory regions data from Ensembl
-edb <- EnsDb.Hsapiens.v75
-ensembl_reg = useEnsembl(biomart="regulation", dataset = "hsapiens_regulatory_feature", GRCh=37)
-listAttributes(ensembl_reg)
-all.regulatory <- as.data.table(getBM(attributes = c("chromosome_name", "bound_seq_region_start",
-                                                     "bound_seq_region_end", "feature_type_name"),
-                                      mart = ensembl_reg))
-
-# Rearranging the regulatory regions output
-setcolorder(all.regulatory, c("chromosome_name", "bound_seq_region_start", "bound_seq_region_end", "feature_type_name"))
-all.regulatory <- all.regulatory[order(chromosome_name, bound_seq_region_start)]
-regulatory <- GRanges(all.regulatory) %>% unstrand() %>% GenomicRanges::reduce()
-regulatory <- keepSeqlevels(regulatory, c(1:22, "X", "Y"), pruning.mode = "coarse")
-regulatory_rest <- c(exons, introns) %>% sort() %>% GenomicRanges::setdiff(regulatory, .)
-regulatory_size <- as.double(sum(width(regulatory_rest)))
-mcols(regulatory_rest)$region <- "regulatory"
-
-## intergenic regions: 1,427,341,140 bp
-chrom_grngs <- as(seqinfo(GRCh37.txdb), 'GRanges')
-collapsed_tx <- GenomicRanges::reduce(transcripts(GRCh37.txdb))
-strand(collapsed_tx) <- '*'
-intergenic <- GenomicRanges::setdiff(chrom_grngs, collapsed_tx)
-# Intergenic region size and removing overlapping regions with other annotated regions.
-non_inter_ranges <- c(exons, introns, regulatory_rest) %>% sortSeqlevels() %>% sort()
-intergenic_rest <- GenomicRanges::setdiff(intergenic, non_inter_ranges)
-mcols(intergenic_rest)$region <- "intergenic"
-intergenic_size <- as.double(sum(width(intergenic_rest)))
-
-
-# *** Not needed. 5' and 3' UTR.
-five_UTR <- fiveUTRsByTranscript(GRCh37.txdb) %>% unlist() %>% GenomicRanges::reduce()
-sum(width(five_UTR))
-
-three_UTR <- threeUTRsByTranscript(GRCh37.txdb) %>% unlist() %>% GenomicRanges::reduce()
-sum(width(three_UTR))
-
-## total genome size: 3095677412 bp
-genome <- c(exons, introns, regulatory_rest, intergenic_rest) %>% sort()
-genome_size <- sum(c(exons_size, introns_size, regulatory_size, intergenic_size))
+# ah = AnnotationHub()
+# #AnnotationHub::query(ah, c('gtf', 'Homo_sapiens', 'GRCh37'))
+# GRCh37.gtf<- ah[['AH10684']]
+# 
+# 
+# ## subset the gtf files for only protein_coding genes and lincRNAs
+# GRCh37.gtf<- GRCh37.gtf[GRCh37.gtf$gene_biotype %in% c('protein_coding', 'lincRNA')]
+# table(GRCh37.gtf$gene_biotype)
+# 
+# ## make a txdb and keep conventional chromosomes
+# GRCh37.txdb <- makeTxDbFromGRanges(GRCh37.gtf)
+# GRCh37.txdb <- keepSeqlevels(GRCh37.txdb, c(1:22, 'X', 'Y'), pruning.mode = 'coarse')
+# 
+# 
+# ## cds (not compiled in the total genome size because included in exons)
+# cds <- cdsBy(GRCh37.txdb, 'gene') %>% unlist() %>% unstrand() %>% GenomicRanges::reduce()
+# sum(width(cds))
+# 
+# 
+# ## exons: 101,578,353 bp
+# exons <- exonicParts(GRCh37.txdb) %>% unstrand() %>% GenomicRanges::reduce()
+# exons_size <- as.double(sum(width(exons)))
+# mcols(exons)$region <- "exons"
+# 
+# 
+# ## introns: 1,345,484,609 bp
+# # The overlap with some exons is also removed by GenomicRanges::setdiff() function.
+# introns <- intronicParts(GRCh37.txdb) %>% unstrand() %>% GenomicRanges::setdiff(., exons)
+# introns_size <- as.double(sum(width(introns)))
+# mcols(introns)$region <- "introns"
+# 
+# 
+# ## regulatory regions: 221,273,310 bp
+# # Gathering regulatory regions data from Ensembl
+# edb <- EnsDb.Hsapiens.v75
+# ensembl_reg = useEnsembl(biomart="regulation", dataset = "hsapiens_regulatory_feature", GRCh=37)
+# listAttributes(ensembl_reg)
+# all.regulatory <- as.data.table(getBM(attributes = c("chromosome_name", "bound_seq_region_start",
+#                                                      "bound_seq_region_end", "feature_type_name"),
+#                                       mart = ensembl_reg))
+# 
+# # Rearranging the regulatory regions output
+# setcolorder(all.regulatory, c("chromosome_name", "bound_seq_region_start", "bound_seq_region_end", "feature_type_name"))
+# all.regulatory <- all.regulatory[order(chromosome_name, bound_seq_region_start)]
+# regulatory <- GRanges(all.regulatory) %>% unstrand() %>% GenomicRanges::reduce()
+# regulatory <- keepSeqlevels(regulatory, c(1:22, "X", "Y"), pruning.mode = "coarse")
+# regulatory_rest <- c(exons, introns) %>% sort() %>% GenomicRanges::setdiff(regulatory, .)
+# regulatory_size <- as.double(sum(width(regulatory_rest)))
+# mcols(regulatory_rest)$region <- "regulatory"
+# 
+# ## intergenic regions: 1,427,341,140 bp
+# chrom_grngs <- as(seqinfo(GRCh37.txdb), 'GRanges')
+# collapsed_tx <- GenomicRanges::reduce(transcripts(GRCh37.txdb))
+# strand(collapsed_tx) <- '*'
+# intergenic <- GenomicRanges::setdiff(chrom_grngs, collapsed_tx)
+# # Intergenic region size and removing overlapping regions with other annotated regions.
+# non_inter_ranges <- c(exons, introns, regulatory_rest) %>% sortSeqlevels() %>% sort()
+# intergenic_rest <- GenomicRanges::setdiff(intergenic, non_inter_ranges)
+# mcols(intergenic_rest)$region <- "intergenic"
+# intergenic_size <- as.double(sum(width(intergenic_rest)))
+# 
+# 
+# # *** Not needed. 5' and 3' UTR.
+# five_UTR <- fiveUTRsByTranscript(GRCh37.txdb) %>% unlist() %>% GenomicRanges::reduce()
+# sum(width(five_UTR))
+# 
+# three_UTR <- threeUTRsByTranscript(GRCh37.txdb) %>% unlist() %>% GenomicRanges::reduce()
+# sum(width(three_UTR))
+# 
+# ## total genome size: 3,095,677,412 bp
+# genome <- c(exons, introns, regulatory_rest, intergenic_rest) %>% sort()
+# genome_size <- sum(c(exons_size, introns_size, regulatory_size, intergenic_size))
+# 
+# ## Covered regions of the genome
+# # Formatting previous GRanges for use with KaryotypeR
+# seqlevelsStyle(genome) <- "UCSC"
+# regulatory_removed <- GenomicRanges::setdiff(regulatory, regulatory_rest)
+# seqlevelsStyle(regulatory_removed) <- "UCSC"
+# # Plotting regions
+# png(file="Results/covered_genome.png",
+#     width=50.8, height=28.575, units = "cm", res=300)
+# kp <- plotKaryotype()
+# kpPlotRegions(kp, data=genome[genome$region=="exons"], layer.margin = 0.01, border=NA, col = "#8AC926")
+# kpPlotRegions(kp, data=genome[genome$region=="introns"], layer.margin = 0.01, border=NA, col = "#1982C4")
+# kpPlotRegions(kp, data=genome[genome$region=="regulatory"], layer.margin = 0.01, border=NA, col = "#FF595E")
+# kpPlotRegions(kp, data=genome[genome$region=="intergenic"], layer.margin = 0.01, border=NA, col = "#FFCA3A")
+# 
+# legend("bottomright",        
+#        title = "Region type",
+#        title.adj = 0.2,
+#        legend = c("Exons", "Introns", "Regulatory", "Intergenic"),
+#        lty = 1,
+#        col = c("#8AC926", "#1982C4", "#FF595E", "#FFCA3A"),
+#        lwd = 2,
+#        bty = "n",
+#        seg.len=1,
+#        xjust = -1,
+#        cex=1.5)
+# dev.off()
+# 
+# # Plotting regions with removed regulatory regions
+# png(file="Results/covered_genome_removed_regulatory.png",
+#     width=50.8, height=28.575, units = "cm", res=300)
+# kp <- plotKaryotype()
+# kpPlotRegions(kp, data=genome[genome$region=="exons"], layer.margin = 0.01, border=NA, col = "#8AC926", r0=0, r1=0.50)
+# kpPlotRegions(kp, data=genome[genome$region=="introns"], layer.margin = 0.01, border=NA, col = "#1982C4", r0=0, r1=0.50)
+# kpPlotRegions(kp, data=genome[genome$region=="regulatory"], layer.margin = 0.01, border=NA, col = "#FF595E", r0=0, r1=0.50)
+# kpPlotRegions(kp, data=genome[genome$region=="intergenic"], layer.margin = 0.01, border=NA, col = "#FFCA3A", r0=0, r1=0.50)
+# kpPlotRegions(kp, data=regulatory_removed, layer.margin = 0.01, border=NA, col = "#F39197", r0=1, r1=0.60)
+# 
+# legend("bottomright",        
+#        title = "Region type",
+#        title.adj = 0.2,
+#        legend = c("Exons", "Introns", "Regulatory", "Intergenic",  "Removed regulatory"),
+#        lty = 1,
+#        col = c("#8AC926", "#1982C4", "#FF595E", "#FFCA3A", "#F39197"),
+#        lwd = 2,
+#        bty = "n",
+#        seg.len=1,
+#        xjust = -1,
+#        cex=1.5)
+# dev.off()
 
 
 ## Final region sizes used for TMB calculation. 
 GRCh37.region_sizes <- as.data.table(setNames(list(3095677412, 101578353, 1345484609, 221273310, 1427341140), 
                                               list("genome_size", "exons_size",
-                                                    "introns_size", "regulatory_size",
+                                                   "introns_size", "regulatory_size",
                                                    "intergenic_size")))
 
 ## Values are in bp. TMB requires values to be in megabase, therefore a simple division by 10^6 is needed when calculating TMBs.
 GRCh37.region_sizes <- round(GRCh37.region_sizes/1e6, digits = 2)
+
+
+
 
 
 ################################################################################
@@ -174,8 +221,6 @@ GRCh37.region_sizes <- round(GRCh37.region_sizes/1e6, digits = 2)
 Patients_list <- gsub("NSLC-", "",sort(clin_data[, Patient_ID]))
 
 for(Patient in Patients_list) {
-  
-  Patient = "0001"
   
   message(glue("Processing TMB values for patient {Patient}."))
   
@@ -221,8 +266,8 @@ for(Patient in Patients_list) {
   if(!all(unique(worst_consequence) %in% as.vector(unlist(region_types)))) {
     missing_consequence <- unique(worst_consequence[!(worst_consequence %in% as.vector(unlist(region_types)))])
     stop("Missing region type detected: ", paste(missing_consequence, collapse = ", "), 
-    ".\nPlease add the missing region in the proper 'region_types' variable (see script)",  
-    "\naccording to https://grch37.ensembl.org/info/genome/variation/prediction/predicted_data.html")
+         ".\nPlease add the missing region in the proper 'region_types' variable (see script)",  
+         "\naccording to https://grch37.ensembl.org/info/genome/variation/prediction/predicted_data.html")
     
   } else {
     VEP_data[, region_type := unlist(sapply(1:nrow(VEP_data), function(x) {names(region_types[grep(worst_consequence[x], region_types)])}))]
@@ -249,7 +294,7 @@ for(Patient in Patients_list) {
   
   # Final data set for each patient
   #fwrite(VEP_data, glue("Data/VEP_82_NSLC_TMB/VEP_NSLC-{Patient}.csv"))
- 
+  
   
   
   ##############################################################################
@@ -285,13 +330,13 @@ for(Patient in Patients_list) {
   
   # Making a table for WGS and region based TMB calculated above. Not including synonymous variants.
   VEP.TMBs.no_syn <- as.data.table(setNames(c(VEP.WGS_TMB.no_syn, VEP.TMBs_list.no_syn),
-                                               c("genome_TMB", 
-                                                 paste0(names(region_types)[c(1,3:5)], "_TMB")))) # Splice variants are included in exons
+                                            c("genome_TMB", 
+                                              paste0(names(region_types)[c(1,3:5)], "_TMB")))) # Splice variants are included in exons
   
   # Making a table for WGS and region based TMB calculated above. Including synonymous variants.
   VEP.TMBs.syn <- as.data.table(setNames(c(VEP.WGS_TMB.syn, VEP.TMBs_list.syn), 
-                                           c("genome_TMB_with_synonymous", 
-                                             paste0(names(region_types)[c(1,3:5)], "_TMB_with_synonymous")))) # Splice variants are included in exons
+                                         c("genome_TMB_with_synonymous", 
+                                           paste0(names(region_types)[c(1,3:5)], "_TMB_with_synonymous")))) # Splice variants are included in exons
   
   ################
   ### Option 2 ###
@@ -311,40 +356,45 @@ for(Patient in Patients_list) {
   
   # Making a table for WGS and region based TMB calculated above. Not including synonymous variants.
   VEP.WGS.TMBs.no_syn <- as.data.table(setNames(c(VEP.WGS_TMB.no_syn, VEP.WGS.TMBs_list.no_syn),
-                                                  c("genome_TMB", paste0(names(region_types), "_WGS_TMB"))))
+                                                c("genome_TMB", paste0(names(region_types), "_WGS_TMB"))))
   
   # Making a table for WGS and region based TMB calculated above. Including synonymous variants.
   VEP.WGS.TMBs.syn <- as.data.table(setNames(c(VEP.WGS_TMB.syn, VEP.WGS.TMBs_list.syn), 
-                                               c("genome_TMB", paste0(names(region_types), "_WGS_TMB_with_synonymous"))))
+                                             c("genome_TMB", paste0(names(region_types), "_WGS_TMB_with_synonymous"))))
   
   # Making a table for the region specific TMB to WGS TMB ratio. Not including synonymous variants.
-  VEP.WGS.TMBs_ratio.no_syn <- setNames(round(sapply(1:length(VEP.WGS.TMBs_list.no_syn),
-                                                     function(x) VEP.WGS.TMBs_list.no_syn[[x]]/VEP.WGS_TMB.no_syn), digits = 3),
-                                        c(paste0(names(region_types), "_TMB_ratio")))
+  VEP.WGS.TMBs_ratio.no_syn <- as.data.table(setNames(c(VEP.WGS.TMBs_list.no_syn), 
+                                                      c(paste0(names(region_types), "_TMB_ratio"))))/VEP.WGS_TMB.no_syn
+  VEP.WGS.TMBs_ratio.no_syn <- round(VEP.WGS.TMBs_ratio.no_syn, digits = 3)
   
   # Making a table for the region specific TMB to WGS TMB ratio. Including synonymous variants.
-  VEP.WGS.TMBs_ratio.syn <- setNames(c(round(sapply(1:length(VEP.WGS.TMBs_list.syn),
-                                                     function(x) VEP.WGS.TMBs_list.syn[[x]]/VEP.WGS_TMB.syn), digits = 3)),
-                                        c(paste0(names(region_types), "_TMB_ratio_syn")))
+  VEP.WGS.TMBs_ratio.syn <- as.data.table(setNames(c(VEP.WGS.TMBs_list.syn), 
+                                                   c(paste0(names(region_types), "_TMB_ratio_syn"))))/VEP.WGS_TMB.syn
+  VEP.WGS.TMBs_ratio.syn <- round(VEP.WGS.TMBs_ratio.syn, digits = 3)
   
   
-  all.TMB.regions <- list(unlist(c(VEP.TMBs.no_syn,
-                                   VEP.TMBs.syn[, .(genome_TMB_with_synonymous,
-                                                    exons_TMB_with_synonymous)])),
-                          unlist(c(VEP.WGS.TMBs.no_syn,
-                                   VEP.WGS.TMBs.syn[, .(exons_WGS_TMB_with_synonymous)])),
+  all.TMB.regions <- list(cbind(VEP.TMBs.no_syn,
+                                VEP.TMBs.syn[, .(genome_TMB_with_synonymous,
+                                                 exons_TMB_with_synonymous)]),
+                          cbind(VEP.WGS.TMBs.no_syn[, !"genome_TMB"],
+                                VEP.WGS.TMBs.syn[, .(exons_WGS_TMB_with_synonymous)]),
                           VEP.WGS.TMBs_ratio.no_syn,
                           VEP.WGS.TMBs_ratio.syn)
   
+  # List description:
+  # - TMB_per_region: TMB computed for every region according to their respective size. *Splice sites TMB is fused with exons TMB.
+  # - WGS_TMB_per_region: TMB computed for every region but according to the genome size (~3100 Mb).
+  # - WGS_TMB_per_region_ratio: Ratio of the region TMB based on the genome size. Obtained with genome_TMB/region contained in WGS_TMB_per_region.
+  # - WGS_TMB_per_region_ratio_with_synonymous: same as WGS_TMB_per_region_ratio but including synonymous variants.
   all.TMB.regions <- setNames(all.TMB.regions, c("TMB_per_region", 
                                                  "WGS_TMB_per_region", 
                                                  "WGS_TMB_per_region_ratio", 
                                                  "WGS_TMB_per_region_ratio_with_synonymous"))
   
-  ## TODO
-  ## Change order in lists
-  ## Put a description of every list type found in all.TMB.regions.
-  setcolorder(all.TMB.regions, colnames(all.TMB.regions)[c(1, 6, 2, 7, 3:5, 8, ncol(all.TMB.regions), 9:(ncol(all.TMB.regions)-1))])
+  # Reordering some lists
+  setcolorder(all.TMB.regions$TMB_per_region, colnames(all.TMB.regions$TMB_per_region)[c(1, 6, 2, 7, 3:5)])
+  setcolorder(all.TMB.regions$WGS_TMB_per_region, colnames(all.TMB.regions$WGS_TMB_per_region)[c(1, 6, 2:5)])
+  
   
   ##############################################################################
   ###################### TMB according to mutation types #######################
@@ -366,15 +416,24 @@ for(Patient in Patients_list) {
     assign(glue("exons_syn_{mutation}_TMB"), exons_syn)
     introns <- round(nrow(VEP_data[region_type == "introns" & mutation_type == mutation]) / GRCh37.region_sizes$introns_size, digits = 3)
     assign(glue("introns_{mutation}_TMB"), introns)
-    intergenic <- round(nrow(VEP_data[(region_type == "intergenic" | region_type == "regulatory") & mutation_type == mutation]) / GRCh37.region_sizes$intergenic_size, digits = 3)
+    regulatory <- round(nrow(VEP_data[region_type == "regulatory" & mutation_type == mutation]) / GRCh37.region_sizes$regulatory_size, digits = 3)
+    assign(glue("regulatory_{mutation}_TMB"), regulatory)
+    intergenic <- round(nrow(VEP_data[region_type == "intergenic" & mutation_type == mutation]) / GRCh37.region_sizes$intergenic_size, digits = 3)
     assign(glue("intergenic_{mutation}_TMB"), intergenic)
   }
   
-  all.TMB.mutations <- data.table(exons_SNV_TMB, exons_deletion_TMB, exons_insertion_TMB,
-                                  exons_syn_SNV_TMB, exons_syn_deletion_TMB, exons_syn_insertion_TMB,
-                                  introns_SNV_TMB, introns_deletion_TMB, introns_insertion_TMB,
-                                  intergenic_SNV_TMB, intergenic_deletion_TMB, intergenic_insertion_TMB)
+  mutation_names <- c("exons_mutations", 
+                      "exons_mutations_with_synonymous", 
+                      "introns_mutations", 
+                      "regulatory_mutations", 
+                      "intergenic_mutations")
   
+  all.TMB.mutations <- setNames(list(data.table(exons_SNV_TMB, exons_deletion_TMB, exons_insertion_TMB),
+                                     data.table(exons_syn_SNV_TMB, exons_syn_deletion_TMB, exons_syn_insertion_TMB),
+                                     data.table(introns_SNV_TMB, introns_deletion_TMB, introns_insertion_TMB),
+                                     data.table(regulatory_SNV_TMB, regulatory_deletion_TMB, regulatory_insertion_TMB),
+                                     data.table(intergenic_SNV_TMB, intergenic_deletion_TMB, intergenic_insertion_TMB)), 
+                                nm = mutation_names)
   
   ##############################################################################
   ########################## TMB data consolidation ############################
@@ -387,9 +446,20 @@ for(Patient in Patients_list) {
   #   xx list variable (see all.TMB.regions and all.TMB.mutations variables).
   #   E.g. VEP.TMB_records[["NSLC_0001"]]$TMB_by_region$exons_TMB
   
-  VEP.TMB_records <- rbindlist(list(VEP.TMB_records, c(setNames(list(glue("NSLC-{Patient}")), "Patient_ID"), all.TMB.regions, all.TMB.mutations)))
-  fwrite(VEP.TMB_records, glue("Data/VEP_82_NSLC_TMB/VEP_NSLC-{Patient}_TMB.csv"))
+  VEP.TMB_records <- rbindlist(list(VEP.TMB_records, c(setNames(list(glue("NSLC-{Patient}")), "Patient_ID"), unlist(all.TMB.regions), unlist(all.TMB.mutations))))
+  
 } # End of main loop
+
+## Final data reporting
+description <- data.table(Field = c("TMB_per_region", "WGS_TMB_per_region", "WGS_TMB_per_region_ratio", "WGS_TMB_per_region_ratio_with_synonymous"),
+                          Description = c("TMB computed for every region according to their respective size. *Splice sites TMB is fused with exons TMB.",
+                                          "TMB computed for every region but according to the genome size (~3100 Mb).",
+                                          "Ratio of the region TMB based on the genome size. Obtained by genome_TMB/region contained in WGS_TMB_per_region.",
+                                          "Same as WGS_TMB_per_region_ratio but including synonymous variants."))
+
+write.xlsx(VEP.TMB_records, "Data/VEP_82_NSLC_TMB.xlsx", sheetName = "TMB_data_n_82", row.names = FALSE)
+write.xlsx(description, "Data/VEP_82_NSLC_TMB.xlsx", sheetName = "Description", append = TRUE, row.names = FALSE)
+
 
 ################################################################################
 ################################### ARCHIVES ###################################
