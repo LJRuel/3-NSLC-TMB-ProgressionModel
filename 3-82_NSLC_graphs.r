@@ -12,10 +12,11 @@ library(glue)
 library(xlsx)
 library(karyoploteR)
 library(regioneR)
+library(RColorBrewer)
 
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 
-# Clinicopathological data - keeping only adenocarinomas
+# Clinicopathological data - keeping only adenocarcinomas
 clin_data <- as.data.table(read.xlsx("Data/NCI_NeverSmoker_n92_20210812_TMB_drivers.xlsx", sheetIndex = 1))
 clin_data <- clin_data[histology == 3, ]
 Patients_list <- gsub("NSLC-", "",sort(clin_data[, Patient_ID]))
@@ -25,46 +26,7 @@ for(Patient in Patients_list) {
   assign(glue("VEP_data_{Patient}"), fread(glue("Data/VEP_82_NSLC_TMB/VEP_NSLC-{Patient}.csv")))
 }
 
-# karyoploteR mutations graphs for each patient. Reference: https://bernatgel.github.io/karyoploter_tutorial/
-# ** Warning: slow loop, redo this only if needed.
-# Loop for making Rainfall plots for each patient. 
-for(Patient in Patients_list) {    
-  # Preparing data for rainfall plot 
-  somatic.mutations <- toGRanges(get(glue("VEP_data_{Patient}"))[, list(CHROM, POS, END_POS, ID, REF, ALT, region_type, mutation_type)])
-  seqlevelsStyle(somatic.mutations) <- "UCSC"
-  
-  # Preemptive rainfall plot to get max distance value for the final rainfall plot
-  kp <- plotKaryotype(plot.type=4, ideogram.plotter = NULL, labels.plotter = NULL)
-  kpRnfall <- kpPlotRainfall(kp, data = somatic.mutations)
-  max_distance_rounded <- ceiling(max(unlist(kpRnfall$latest.plot$computed.values$distances))*2)/2
-  
-  # Making the rainfall plot
-  pp <- getDefaultPlotParams(plot.type = 4)
-  pp$data1inmargin <- 0
-  pp$bottommargin <- 20
-  
-  png(file=glue("Results/Rainfall plots/NSLC_{Patient}_rainfall.png"),
-      width=465, height=225, units = "mm", res=300)
-  
-  kp <- plotKaryotype(plot.type=4, ideogram.plotter = NULL,
-                      labels.plotter = NULL, plot.params = pp)
-  kpAddCytobandsAsLine(kp)
-  kpAddChromosomeNames(kp, srt=45)
-  variant.colors <- getVariantsColors(somatic.mutations$REF, somatic.mutations$ALT)
-  kpPlotRainfall(kp, data = somatic.mutations, col = variant.colors, r0=0.7, r1=0, ymin = 0, ymax = max_distance_rounded)
-  kpAxis(kp, ymax = 0, ymin = max_distance_rounded, tick.pos = floor(max_distance_rounded):0, r0=0, r1=0.7)
-  kpAddLabels(kp, labels = c("Distance between mutations (log10)"), srt=90, pos=1, label.margin = 0.04, r0=0, r1=0.7)
-  kpPlotDensity(kp, data = somatic.mutations, r0=0.72, r1=1)
-  kpAddLabels(kp, labels = c("Mutation density"), srt=90, pos=1, label.margin = 0.04, r0=0.71, r1=1)
-  
-  dev.off()
-}
-
-################################################################################
-################################################################################
-### Section for all combined patients variants
-
-# Merging all patients variants 
+# Merging all patients variants
 VEP_data_list <- objects()[grep("VEP_data_0", objects())]
 VEP_data_all_patients <- rbindlist(lapply(1:length(VEP_data_list), function(x) get(VEP_data_list[x])), use.names = TRUE)
 VEP_data_all_patients <- VEP_data_all_patients[order(VEP_data_all_patients[,CHROM])]
@@ -73,6 +35,100 @@ VEP_data_all_patients <- VEP_data_all_patients[order(VEP_data_all_patients[,CHRO
 somatic.mutations.all <- toGRanges(VEP_data_all_patients[, list(CHROM, POS, END_POS, ID, REF, ALT, region_type, mutation_type)])
 seqlevelsStyle(somatic.mutations.all) <- "UCSC"
 
+################################################################################
+############################### Density plots ##################################
+################################################################################
+
+############# With the density pre calculated by sliding windows ###############
+
+# Window size used to compute sliding windows
+window_size <- 1e6
+
+## Merging all chromosome sliding windows densities together
+chrom_name <- c(1:22, 'X', 'Y')
+# Reading data for each chrosome
+for(chromosome in chrom_name) {
+  assign(glue("chrom_{chromosome}_density_{window_size}Mb"), fread(glue("Data/Sliding windows and density/chromosome_{chromosome}_sw_density_{window_size}Mb.csv"))[, chrom:=glue("{chromosome}")])
+}
+# Extracting the data read in the previous loop
+expr <- regexpr("chrom_.*_density_.*Mb", objects()) # get the objects indices related to the read data
+chrom_density.list <- str_sort(regmatches(objects(), expr), numeric = TRUE) # extract the objects names
+chrom_density.all <- rbindlist(lapply(chrom_density.list, function(x) get(x))) # merging the chromosomes densities data
+
+chrom_density.all$chrom <- factor(chrom_density.all$chrom, levels=chrom_name)
+
+# 3rd quartile cutoff for hotspot regions
+hotspot_cutoff <- quantile(chrom_density.all$variant_density)[4]
+
+# Plotting the density
+ggplot(data = chrom_density.all, aes(x = window_start, y = variant_density, color = chrom)) + 
+  geom_line() + 
+  geom_hline(yintercept = hotspot_cutoff, color = "red") + 
+  theme_classic() + 
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        strip.background = element_blank(),
+        strip.placement='outside') +
+  scale_color_hue() +
+  xlab("Chromosomes") + 
+  ylab("Variant Density") +
+  facet_grid(~chrom,
+             space = "free_x", 
+             switch = "x")
+
+
+############## With the density directly calculated by karyoteR ################
+
+# Density plot for all combined chromosomes. The density is directly calculated by karyoteR
+#png(file="Results/Density plots/all_patients_density.png", width=465, height=225, units = "mm", res=300)
+
+pp <- getDefaultPlotParams(plot.type = 4)
+pp$data1inmargin <- 0
+pp$bottommargin <- 20
+
+kp <- plotKaryotype(plot.type=4, ideogram.plotter = NULL,
+                    labels.plotter = NULL, plot.params = pp)
+kpAddCytobandsAsLine(kp)
+kpAddChromosomeNames(kp, srt=45)
+#kpPlotDensity(kp, data = somatic.mutations.all, window.size = 10e6)
+kpDensity <- kpPlotDensity(kp, data = somatic.mutations.all, col = "#F6D55C", window.size = 10e6)
+kpDensity$latest.plot$computed.values$density
+kpDensity$latest.plot$computed.values$windows
+kpAddLabels(kp, labels = c("Mutation density"), srt=90, pos=1, label.margin = 0.04)
+legend("topleft", 
+       title = "Window size",
+       legend = "1 Mb",
+       #legend = c("1 Mb", "10 Mb"),
+       xjust = 1,
+       lty = 1,
+       col = "#F6D55C",
+       #col = c("#F6D55C", "black"),
+       lwd = 2,
+       seg.len = 1,
+       xpd = TRUE,
+       bty = "n",
+       x.intersp = 0.5)
+
+#dev.off()
+
+# Density plot for each chromosome
+for(chromosome in seqlevels(somatic.mutations.all)) {
+  # png(file=glue("Results/Density plots/{chromosome}_density.png"),
+  #     width=465, height=225, units = "mm", res=300)
+  
+  kp <- plotKaryotype(plot.type=4, ideogram.plotter = NULL,
+                      labels.plotter = NULL, plot.params = pp, chromosomes = chromosome)
+  kpAddCytobandsAsLine(kp)
+  kpAddChromosomeNames(kp, srt=45)
+  kpPlotDensity(kp, data = somatic.mutations.all)
+  kpAddLabels(kp, labels = c("Mutation density"), srt=90, pos=1, label.margin = 0.04)
+  
+  # dev.off()
+}
+
+################################################################################
+############################### Rainfall plots #################################
+################################################################################
 
 ## karyoploteR mutations plots for the entire cohort. Reference: https://bernatgel.github.io/karyoploter_tutorial/
 
@@ -100,47 +156,46 @@ seqlevelsStyle(somatic.mutations.all) <- "UCSC"
 # kpPlotDensity(kp, data = somatic.mutations.all, r0=0.72, r1=1)
 # kpAddLabels(kp, labels = c("Mutation density"), srt=90, pos=1, label.margin = 0.04, r0=0.71, r1=1)
 
-# Density plot for all chromosomes
-png(file="Results/Density plots/all_patients_density.png",
-    width=465, height=225, units = "mm", res=300)
 
-kp <- plotKaryotype(plot.type=4, ideogram.plotter = NULL,
-                    labels.plotter = NULL, plot.params = pp)
-kpAddCytobandsAsLine(kp)
-kpAddChromosomeNames(kp, srt=45)
-kpPlotDensity(kp, data = somatic.mutations.all, window.size = 10e6)
-kpPlotDensity(kp, data = somatic.mutations.all, col = "#F6D55C")
-kpAddLabels(kp, labels = c("Mutation density"), srt=90, pos=1, label.margin = 0.04)
-legend("topleft", 
-       title = "Window size",
-       legend = c("1 Mb", "10 Mb"),
-       xjust = 1,
-       lty = 1,
-       col = c("black", "#F6D55C"),
-       lwd = 2,
-       seg.len = 1,
-       xpd = TRUE,
-       bty = "n",
-       x.intersp = 0.5)
+################################################################################
+################################################################################
+### Section for all individual patients variants
 
-dev.off()
+# karyoploteR mutations graphs for each patient. Reference: https://bernatgel.github.io/karyoploter_tutorial/
+# ** Warning: slow loop, redo this only if needed.
+# Loop for making Rainfall plots for each patient.
 
-# Density plot for each chromosome
-for(chromosome in seqlevels(somatic.mutations.all)) {
-  png(file=glue("Results/Density plots/{chromosome}_density.png"),
-      width=465, height=225, units = "mm", res=300)
-  
-  kp <- plotKaryotype(plot.type=4, ideogram.plotter = NULL,
-                      labels.plotter = NULL, plot.params = pp, chromosomes = chromosome)
-  kpAddCytobandsAsLine(kp)
-  kpAddChromosomeNames(kp, srt=45)
-  kpPlotDensity(kp, data = somatic.mutations.all)
-  kpAddLabels(kp, labels = c("Mutation density"), srt=90, pos=1, label.margin = 0.04)
-  
-  dev.off()
-}
-
-
+# for(Patient in Patients_list) {    
+#   # Preparing data for rainfall plot 
+#   somatic.mutations <- toGRanges(get(glue("VEP_data_{Patient}"))[, list(CHROM, POS, END_POS, ID, REF, ALT, region_type, mutation_type)])
+#   seqlevelsStyle(somatic.mutations) <- "UCSC"
+#   
+#   # Preemptive rainfall plot to get max distance value for the final rainfall plot
+#   kp <- plotKaryotype(plot.type=4, ideogram.plotter = NULL, labels.plotter = NULL)
+#   kpRnfall <- kpPlotRainfall(kp, data = somatic.mutations)
+#   max_distance_rounded <- ceiling(max(unlist(kpRnfall$latest.plot$computed.values$distances))*2)/2
+#   
+#   # Making the rainfall plot
+#   pp <- getDefaultPlotParams(plot.type = 4)
+#   pp$data1inmargin <- 0
+#   pp$bottommargin <- 20
+#   
+#   png(file=glue("Results/Rainfall plots/NSLC_{Patient}_rainfall.png"),
+#       width=465, height=225, units = "mm", res=300)
+#   
+#   kp <- plotKaryotype(plot.type=4, ideogram.plotter = NULL,
+#                       labels.plotter = NULL, plot.params = pp)
+#   kpAddCytobandsAsLine(kp)
+#   kpAddChromosomeNames(kp, srt=45)
+#   variant.colors <- getVariantsColors(somatic.mutations$REF, somatic.mutations$ALT)
+#   kpPlotRainfall(kp, data = somatic.mutations, col = variant.colors, r0=0.7, r1=0, ymin = 0, ymax = max_distance_rounded)
+#   kpAxis(kp, ymax = 0, ymin = max_distance_rounded, tick.pos = floor(max_distance_rounded):0, r0=0, r1=0.7)
+#   kpAddLabels(kp, labels = c("Distance between mutations (log10)"), srt=90, pos=1, label.margin = 0.04, r0=0, r1=0.7)
+#   kpPlotDensity(kp, data = somatic.mutations, r0=0.72, r1=1)
+#   kpAddLabels(kp, labels = c("Mutation density"), srt=90, pos=1, label.margin = 0.04, r0=0.71, r1=1)
+#   
+#   dev.off()
+# }
 
 ################################################################################
 ################################### ARCHIVES ###################################
@@ -206,6 +261,17 @@ for(chromosome in seqlevels(somatic.mutations.all)) {
 #   assign(glue("chr_{chromosome}"), chr_indices)
 #   assign(glue("chr_{chromosome}_wd_length"), chromo$x$chData[[1]]$loci_end[chr_indices[1]] - chromo$x$chData[[1]]$loci_start[chr_indices[1]])
 # }
+# 
+# for(chromosome in chrom_name) {
+# assign(glue("chrom_{chromosome}_density"), fread(glue("Data/Sliding windows and density/chromosome_{chromosome}_sw_density.csv")))
+# assign(glue("chrom_{chromosome}_density.gr"), makeGRangesFromDataFrame(get(glue("chrom_{chromosome}_density"))[, chrom:=glue("chr{chromosome}")], 
+#                                                                        keep.extra.columns = TRUE, 
+#                                                                        ignore.strand = TRUE, 
+#                                                                        seqnames.field = "chrom", 
+#                                                                        start.field = "window_start",
+#                                                                        end.field = "window_end"))
+# }
+# 
 
 
 
