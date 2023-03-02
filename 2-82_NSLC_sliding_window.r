@@ -24,8 +24,8 @@ NSLC_variants <- rbindlist(data_list, use.names = TRUE)
 NSLC_variants <- NSLC_variants[order(NSLC_variants[,CHROM])]
 
 # Define window size and step
-window_size <- 1000000
-step <- 1000
+window_size <- as.integer(1000000)
+step <- as.integer(1000)
 
 # Initialize vectors to store results
 for(chrom in as.character(seqnames(chrom_grngs))) {
