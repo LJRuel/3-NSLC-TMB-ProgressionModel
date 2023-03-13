@@ -1,8 +1,5 @@
 
 ## TODO
-# - Make a graph of all variants with a Manhattan-like style plot (one for each chromosome?).
-#   One color per region type.
-# - Make a similar graph that combines all the patients.
 # - Compare TMBs with SBS signatures
 
 library(GenomicFeatures)
@@ -12,7 +9,6 @@ library(glue)
 library(xlsx)
 library(karyoploteR)
 library(regioneR)
-library(RColorBrewer)
 
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 
@@ -35,32 +31,33 @@ seqlevelsStyle(somatic.mutations.all) <- "UCSC"
 ############# With the density pre calculated by sliding windows ###############
 
 # Window size used to compute sliding windows
-window_size <- 1e6
+window_size <- 5000
 Mb_length <-  window_size/1e6
 
 ## Merging all chromosome sliding windows densities together
 chrom_name <- c(1:22, 'X', 'Y')
-
-# Reading density data of chromosomes
+# Reading density data of chromosomes with a specific window size
 chrom_density <- rbindlist(lapply(chrom_name, 
-                                  function(x) fread(glue("Data/Sliding windows and density/chromosome_{x}_sw_density_{Mb_length}Mb.csv"))[, chrom:=glue("{x}")])
-                           , use.names = TRUE)
-
+                                  function(x) fread(glue("Data/Sliding windows and density/chromosome_{x}_sw_density_{Mb_length}Mb.csv"))[, chrom:=glue("{x}")]),
+                           use.names = TRUE)
+# Arranging chromosome names for ggplot
 chrom_density$chrom <- factor(chrom_density$chrom, levels=chrom_name)
 
 # 3rd quartile cutoff for hotspot regions
 hotspot_cutoff <- quantile(chrom_density$variant_density)[4]
 
 # Plotting the density
-ggplot(data = chrom_density, aes(x = window_start, y = variant_density, color = chrom)) + 
-  geom_line(size = 0.2) + 
+ggplot(data = chrom_density[window_end <= 100000], aes(x = window_start, y = variant_density, color = chrom)) + 
+  geom_line(linewidth = 0.2) +
+  geom_area() +
   geom_hline(yintercept = hotspot_cutoff, color = "red") + 
   theme_classic() + 
   theme(axis.text.x = element_blank(),
         axis.ticks.x = element_blank(),
         strip.background = element_blank(),
         strip.placement='outside', # for facet_grid label position
-        panel.spacing = unit(0.3, "lines")) + # for facet_grid space between panels
+        panel.spacing = unit(0.3, "lines"),
+        legend.position = "none") + # for facet_grid space between panels
   scale_color_hue() +
   xlab("Chromosomes") + 
   ylab("Variant Density") +
@@ -70,6 +67,42 @@ ggplot(data = chrom_density, aes(x = window_start, y = variant_density, color = 
              switch = "x")
 
 ggsave(file=glue("Results/Density plots/sw_{Mb_length}Mb_density.png"), width=15, height=7, dpi=300)
+
+
+## Merging all chromosome sliding windows densities together and combining all sliding windows sizes
+chrom_name <- c(1:22, 'X', 'Y')
+window_size.all <- list(0.005, 0.05, 0.5, 1, 10)
+
+chrom_density.all <- rbindlist(lapply(chrom_name, 
+                                      function(x) rbindlist(lapply(window_size.all, 
+                                                                   function(i) fread(glue("Data/Sliding windows and density/chromosome_{x}_sw_density_{i}Mb.csv"))[, ':='(chrom=glue("{x}"), window=glue("{i}Mb"))]))))
+chrom_density.all$chrom <- factor(chrom_density.all$chrom, levels=chrom_name)
+
+for(size in window_size.all){
+  chrom_density.all[window == glue("{size}Mb"), variant_density_norm:=((variant_density-min(variant_density))/(max(variant_density)-min(variant_density)))]
+}
+
+# One combined plot for all normalized window size
+density.all.gp <- ggplot(data = chrom_density.all, aes(x = window_start, y = variant_density_norm, fill = window, color = window)) + 
+  geom_line(linewidth=0.1) +
+  #geom_hline(yintercept = hotspot_cutoff, color = "red") + 
+  theme_classic() + 
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        strip.background = element_blank(),
+        strip.placement='outside', # for facet_grid label position
+        panel.spacing = unit(0.3, "lines")) + # for facet_grid space between panels
+  scale_fill_hue(name = "Sliding window size") +
+  scale_color_hue(name = "Sliding window size") +
+  xlab("Chromosomes") + 
+  ylab("Variant Density") +
+  facet_grid(~chrom,
+             space = "free_x",
+             scales = "free_x",
+             switch = "x")
+
+ggsave(density.all.gp, file=glue("Results/Density plots/all_sw_density.png"), width=15, height=7, dpi=300)
+
 
 ############## With the density directly calculated by karyoteR ################
 
