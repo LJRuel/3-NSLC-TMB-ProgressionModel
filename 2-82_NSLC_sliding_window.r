@@ -24,7 +24,7 @@ NSLC_variants <- rbindlist(data_list, use.names = TRUE)
 NSLC_variants <- NSLC_variants[order(NSLC_variants[,CHROM])]
 
 # Define window size and step
-window_size <- as.integer(1000000)
+window_size <- as.integer(5000)
 step <- as.integer(1000)
 
 # Initialize vectors to store results
@@ -61,7 +61,12 @@ lapply(as.character(seqnames(chrom_grngs)),
                           file=glue("Data/Sliding windows and density/chromosome_{x}_sw_density_{Mb_length}Mb.csv"),
                           scipen = 10))
 
-############## ARCHIVE #################
+
+
+################################################################################
+################################## ARCHIVE #####################################
+################################################################################
+
 #https://www.google.com/search?q=r+genomic+sliding+window&oq=r+genomic+sliding+window&aqs=edge..69i57j0i30i546i625.11434j0j1&sourceid=chrome&ie=UTF-8
 # GRanges(VEP_data)
 # gr <- makeGRangesFromDataFrame(VEP_data, keep.extra.columns = TRUE, ignore.strand = TRUE, 
