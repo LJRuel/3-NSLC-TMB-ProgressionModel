@@ -309,7 +309,7 @@ for(Patient in Patients_list) {
   
   # TMBs depending on the region. They are calculated based on the whole genome size instead of their own region total cumulative size.
   # This only allows to get the ratio of each region based TMB on the total WGS TMB.
-  # Same with WGS TMB, two version of th exon TMB include synonymous variants or not.
+  # Same with WGS TMB, two version of the exon TMB include synonymous variants or not.
   
   ################
   ### Option 1 ###
@@ -317,7 +317,7 @@ for(Patient in Patients_list) {
   
   ## TMB calculated according to each region's size, e.g. intron TMB with intron variants and intron size.
   # Using this option limits the region types to exon, intron and intergenic. 
-  # Regulatory are included in intergenic and splice are included in exon.
+  # Splice sites variants are included in exon variants, because the splice sites annotation on Ensembl is not available. Therefore, no total size available.
   VEP.exon_TMB.syn <- round(nrow(VEP_data[region_type == "exons" | region_type == "splice"]) / GRCh37.region_sizes$exons_size, digits = 3)
   VEP.exon_TMB.no_syn <- round(nrow(VEP_data[region_type == "exons" & Consequence != "synonymous_variant" | region_type == "splice"]) / GRCh37.region_sizes$exons_size, digits = 3)
   VEP.intron_TMB <- round(nrow(VEP_data[region_type == "introns"]) / GRCh37.region_sizes$introns_size, digits = 3)
@@ -343,6 +343,7 @@ for(Patient in Patients_list) {
   
   ### TMB calculated according to the whole genome size, e.g. intron TMB with intron variants and genome size.
   # This option is representing the different TMBs as a proportion of the whole genome TMB, i.e. their weights on the WGS TMB.
+  # Here, splice sites variants are not included in exons compared to Option 1 section due to the comparison to whole genome size.
   VEP.WGS.exon_TMB.syn <- round(nrow(VEP_data[region_type == "exons"]) / GRCh37.region_sizes$genome_size, digits = 3)
   VEP.WGS.exon_TMB.no_syn <- round(nrow(VEP_data[region_type == "exons" & Consequence != "synonymous_variant"]) / GRCh37.region_sizes$genome_size, digits = 3)
   VEP.WGS.splice_TMB <- round(nrow(VEP_data[region_type == "splice"]) / GRCh37.region_sizes$genome_size, digits = 3)
