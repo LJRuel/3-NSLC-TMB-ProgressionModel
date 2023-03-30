@@ -1,4 +1,10 @@
 
+## TODO
+## - Make a list of cancer protectors, cancer drivers and DNA damage repair genes to find mutations
+## - For somatic and germline WGS, annotate these genes
+## - Make Cox models for drivers with high and low classification
+## - Check the count of unique mutations throughout the cohort. Then, separate the cohort into high and low OS to check the ratio of mutations (Sebastien's idea).
+
 library(xlsx)
 library(data.table)
 library(tidyverse)
@@ -7,70 +13,203 @@ library(survminer)
 
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 
+################################################################################
+######################## Data import and formatting ############################
+################################################################################
+
 # Clinicopathological data - keeping only adenocarcinomas
 clin_data <- as.data.table(read.xlsx("Data/NCI_NeverSmoker_n92_20210812_TMB_drivers.xlsx", sheetIndex = 1))
 clin_data <- clin_data[histology == 3, ]
 Patients_list <- gsub("NSLC-", "",sort(clin_data[, Patient_ID]))
 
-# TMB data for whole genome and specific regions
-TMB <- as.data.table(read.xlsx("Data/VEP_82_NSLC_TMB.xlsx", sheetIndex = 1))
-
-# Merged dataset for survival models
-surv.dt <- merge.data.table(clin_data, TMB, by = "Patient_ID")
+# Merged data sets for survival models: clinical data and TMB data for whole genome and specific regions
+surv.dt <- merge.data.table(clin_data, 
+                            as.data.table(read.xlsx("Data/VEP_82_NSLC_TMB.xlsx", sheetIndex = 1)), 
+                            by = "Patient_ID")
 surv.dt <- surv.dt %>% mutate(TMB_high_low_old = case_when(complete_WGS_TMB >= 1.70 ~ "High",
                                                            complete_WGS_TMB < 1.70 ~ "Low"),
                               pathological_stage_refactor = case_when(pathological_stage %in% c("1A1","1A2","1A3","1B") ~ "I",
                                                                       pathological_stage %in% c("2A", "2B") ~ "II",
-                                                                      pathological_stage %in% c("3A", "3B", "4A") ~ "III"))
+                                                                      pathological_stage %in% c("3A", "3B", "4A") ~ "III & IV"),
+                              recurrence.two = case_when(time_RpFS >= 730 ~ "above",
+                                                         time_RpFS < 730 ~ "below"),
+                              recurrence.five = case_when(time_RpFS >= 1825 ~ "above",
+                                                          time_RpFS < 1825 ~ "below"))
+# Changing comorbidities NA to None for model testing
+surv.dt[, comorbidities:=replace_na(comorbidities, "None")]
 
 # Exporting surv.dt for use with SAS "newsurv" macro.
 #colnames(surv.dt) <- gsub("[.]", "_", colnames(surv.dt))
 #write.xlsx(surv.dt, "n82_NSLC_surv_data.xlsx", row.names = FALSE)
 
-# Survival models with Overall survival
-surv.OS.wg <- coxph(data = surv.dt, Surv(time=time_os, VitalStatus) ~ TMB_per_region.genome_TMB)
-surv.OS.exons <- coxph(data = surv.dt, Surv(time=time_os, VitalStatus) ~ TMB_per_region.exons_TMB)
-surv.OS.introns <- coxph(data = surv.dt, Surv(time=time_os, VitalStatus) ~ TMB_per_region.introns_TMB)
-surv.OS.reg <- coxph(data = surv.dt, Surv(time=time_os, VitalStatus) ~ TMB_per_region.regulatory_TMB)
-surv.OS.intergenic <- coxph(data = surv.dt, Surv(time=time_os, VitalStatus) ~ TMB_per_region.intergenic_TMB)
+################################################################################
+############################## Overall survival ################################
+################################################################################
 
-surv.di.simple <-  coxph(data = surv.dt, Surv(time=time_os, VitalStatus) ~ TMB_high_low_old)
-surv.di.pstage <-  coxph(data = surv.dt, Surv(time=time_os, VitalStatus) ~ TMB_high_low_old + pathological_stage_refactor)
-surv.di.pstage.strata <-  coxph(data = surv.dt, Surv(time=time_os, VitalStatus) ~ TMB_high_low_old + strata(pathological_stage_refactor))
+## TMB as a continuous variable
+surv.wg <- coxph(data = surv.dt, Surv(time=time_os, VitalStatus) ~ TMB_per_region.genome_TMB)
+surv.wg.pstage <- coxph(data = surv.dt, Surv(time=time_os, VitalStatus) ~ TMB_per_region.genome_TMB + pathological_stage_refactor)
+surv.exons <- coxph(data = surv.dt, Surv(time=time_os, VitalStatus) ~ TMB_per_region.exons_TMB)
+surv.introns <- coxph(data = surv.dt, Surv(time=time_os, VitalStatus) ~ TMB_per_region.introns_TMB)
+surv.reg <- coxph(data = surv.dt, Surv(time=time_os, VitalStatus) ~ TMB_per_region.regulatory_TMB)
+surv.intergenic <- coxph(data = surv.dt, Surv(time=time_os, VitalStatus) ~ TMB_per_region.intergenic_TMB)
 
+## TMB as a dichotomous variable
+surv.di <- coxph(data = surv.dt, Surv(time=time_os, VitalStatus) ~ TMB_high_low_old)
+surv.di.pstage <- coxph(data = surv.dt, Surv(time=time_os, VitalStatus) ~ TMB_high_low_old + pathological_stage_refactor)
 
-summary(surv.OS.wg)
-summary(surv.di.simple)
-summary(surv.di.pstage)
-
-plot(predict(surv.di.pstage), 
-     residuals(surv.di.pstage, type="martingale"))
+### Verifying Cox P-H model assumptions
+# Checking for covariates linearity
+plot(predict(surv.wg),
+     residuals(surv.wg, type="deviance"))
 abline(h=0)
-lines(smooth.spline(predict(surv.di.pstage), 
-                    residuals(surv.di.pstage, type="martingale")), col = "red")
+lines(smooth.spline(predict(surv.wg), 
+                    residuals(surv.wg, type="deviance")), col = "red")
 
-plot(cox.zph(surv.di.pstage))
+# Checking for proportional hazards assumption
+plot(cox.zph(surv.wg))
 abline(h=0, col="red")
 
-summary(surv.OS.exons)
-summary(surv.OS.introns)
-summary(surv.OS.reg)
-summary(surv.OS.intergenic)
 
+### Plotting the survival models
+## TMB as a continuous variable
+# Infos for plot
+surv.wg.p <- round(summary(surv.wg)$wald["pvalue"], digits = 4)
+surv.wg.pstage.p <- round(summary(surv.wg.pstage)$wald["pvalue"], digits = 4)
+surv.wg.pstage.HR <- round(exp(summary(surv.wg.pstage)$coefficient[1]), digits = 2) # Hazard ratio with Low TMB as reference group
+#Plot
+surv.wg.plot <- ggsurvplot(survfit(surv.wg, data = surv.dt), 
+                                      risk.table = TRUE,
+                                      legend.title = "Whole-genome TMB",
+                                      ylab = "Survival probability",
+                                      risk.table.pos = "in",
+                                      conf.int = FALSE)
+surv.wg.plot$plot <- surv.wg.plot$plot +
+  annotate("text", x=0, y=0.4, hjust = 0,
+           label = glue("Wald P-value: {surv.wg.p} \nAdjusted Wald P-value: {surv.wg.pstage.p}\nHazard ratio: {surv.wg.pstage.HR}"))
+surv.wg.plot
 
-# Survival models with Recurrence free 
+ggsave("Results/Survival/continuous_OS.png", width=7, height=7, dpi=300)
 
+## TMB as a dichotomous variable
+# Infos for plot
+surv.di.p <- round(summary(surv.di)$wald["pvalue"], digits = 4)
+surv.di.viz <- coxph(data = surv.dt, Surv(time=time_os, VitalStatus) ~ strata(TMB_high_low_old)) # for visualization
+surv.di.pstage.p <- round(summary(surv.di.pstage)$wald["pvalue"], digits = 4)
+surv.di.pstage.HR <- round(exp(-summary(surv.di.pstage)$coefficient[1]), digits = 2) # Hazard ratio with Low TMB as reference group
+# Plot
+surv.di.plot <- ggsurvplot(survfit(surv.di.viz, data = surv.dt), 
+                                      risk.table = TRUE,
+                                      legend.title = "Whole-genome TMB",
+                                      ylab = "Survival probability",
+                                      risk.table.pos = "in")
+surv.di.plot$plot <- surv.di.plot$plot +
+  annotate("text", x=0, y=0.4, hjust = 0,
+           label = glue("Wald P-value: {surv.di.p} \nAdjusted Wald P-value: {surv.di.pstage.p}\nHazard ratio: {surv.di.pstage.HR}"))
+surv.di.plot
+
+ggsave("Results/Survival/dicho_OS.png", width=7, height=7, dpi=300)
 
 ################################################################################
-############################# Distribution plot ################################
+############################## Recurrence free #################################
 ################################################################################
 
-ggplot(surv.dt, aes(x=TMB_per_region.genome_TMB)) +
-  geom_density()
+## TMB as a continuous variable
+surv.wg.reccurence <- coxph(data = surv.dt, Surv(time=time_RpFS, RpFS_indicator) ~ TMB_per_region.genome_TMB)
+surv.wg.reccurence.pstage <- coxph(data = surv.dt, Surv(time=time_RpFS, RpFS_indicator) ~ TMB_per_region.genome_TMB + pathological_stage_refactor)
 
+## TMB as a dichotomous variable
+surv.di.reccurence <- coxph(data = surv.dt, Surv(time=time_RpFS, RpFS_indicator) ~ TMB_high_low_old)
+surv.di.reccurence.pstage <- coxph(data = surv.dt, Surv(time=time_RpFS, RpFS_indicator) ~ TMB_high_low_old + pathological_stage_refactor)
+
+
+### Plotting the survival models
+## TMB as a continuous variable
+# Infos for plot
+surv.wg.reccurence.p <- round(summary(surv.wg.reccurence)$wald["pvalue"], digits = 4) # Wald p-value
+surv.wg.reccurence.pstage.p <- round(summary(surv.wg.reccurence.pstage)$wald["pvalue"], digits = 4) # Wald p-value
+surv.wg.reccurence.pstage.HR <- round(exp(summary(surv.wg.reccurence.pstage)$coefficient[1]), digits = 2) # Hazard ratio with Low TMB as reference group
+# Plot
+surv.wg.reccurence.plot <- ggsurvplot(survfit(surv.wg.reccurence, data = surv.dt), 
+                                      risk.table = TRUE,
+                                      legend.title = "Whole-genome TMB",
+                                      ylab = "Relapse-free probability",
+                                      risk.table.pos = "in",
+                                      conf.int = FALSE)
+surv.wg.reccurence.plot$plot <- surv.wg.reccurence.plot$plot +
+  annotate("text", x=0, y=0.4, hjust = 0,
+           label = glue("Wald P-value: {surv.wg.reccurence.p} \nAdjusted Wald P-value: {surv.wg.reccurence.pstage.p}\nHazard ratio: {surv.wg.reccurence.pstage.HR}"))
+surv.wg.reccurence.plot
+
+ggsave("Results/Survival/continuous_RpFS.png", width=7, height=7, dpi=300)
+
+## TMB as a dichotomous variable
+# Infos for plot
+surv.di.reccurence.p <- round(summary(surv.di.reccurence)$wald["pvalue"], digits = 4) # Wald p-value
+surv.di.reccurence.viz <- coxph(data = surv.dt, Surv(time=time_RpFS, RpFS_indicator) ~ strata(TMB_high_low_old)) # stratified for visualization
+surv.di.reccurence.pstage.p <- round(summary(surv.di.reccurence.pstage)$wald["pvalue"], digits = 4) # Wald p-value
+surv.di.reccurence.pstage.HR <- round(exp(-summary(surv.di.reccurence.pstage)$coefficient[1]), digits = 2) # Hazard ratio with Low TMB as reference group
+
+# Plot
+surv.di.reccurence.plot <- ggsurvplot(survfit(surv.di.reccurence.viz, data = surv.dt), 
+           risk.table = TRUE,
+           legend.title = "Whole-genome TMB",
+           ylab = "Relapse-free probability",
+           risk.table.pos = "in")
+surv.di.reccurence.plot$plot <- surv.di.reccurence.plot$plot +
+  annotate("text", x=0, y=0.4, hjust = 0,
+           label = glue("Wald P-value: {surv.di.reccurence.p} \nAdjusted Wald P-value: {surv.di.reccurence.pstage.p}\nHazard ratio: {surv.di.reccurence.pstage.HR}"))
+surv.di.reccurence.plot
+
+ggsave("Results/Survival/dicho_RpFS.png", width=7, height=7, dpi=300)
 
 ################################################################################
-############################### Model testing ##################################
+########################### Stratified recurrence ##############################
+################################################################################
+
+### Survival analysis with stratified recurrence (< and >= 2 years)
+## TMB as a continuous variable
+# Model
+surv.wg.reccurence_two <- coxph(data = surv.dt[!is.na(recurrence.two)], Surv(time=time_RpFS, RpFS_indicator) ~ TMB_per_region.genome_TMB + strata(recurrence.two))
+
+# Plot
+surv.wg.reccurence_two.plot <- ggsurvplot(survfit(surv.wg.reccurence_two),
+           data = surv.dt[!is.na(recurrence.two)],
+           risk.table = TRUE,
+           legend.title = "Time to recurrence",
+           ylab = "Relapse-free probability",
+           risk.table.pos = "in",
+           legend.labs = c("\u2265 2 years", "< 2 years"))
+
+surv.wg.reccurence_two.plot$plot <- surv.wg.reccurence_two.plot$plot +
+  geom_vline(xintercept = 730)
+
+surv.wg.reccurence_two.plot
+ggsave("Results/Survival/continuous_strata_2_RpFS.png", width=7, height=7, dpi=300)
+
+
+### Survival analysis with stratified recurrence (< and >= 5 years)
+## TMB as a continuous variable
+# Model
+surv.wg.reccurence_five <- coxph(data = surv.dt[!is.na(recurrence.five)], Surv(time=time_RpFS, RpFS_indicator) ~ TMB_per_region.genome_TMB + strata(recurrence.five))
+
+# Plot
+surv.wg.reccurence_five.plot <- ggsurvplot(survfit(surv.wg.reccurence_five),
+                                          data = surv.dt[!is.na(recurrence.five)],
+                                          risk.table = TRUE,
+                                          legend.title = "Time to recurrence",
+                                          ylab = "Relapse-free probability",
+                                          risk.table.pos = "in",
+                                          legend.labs = c("\u2265 5 years", "< 5 years"))
+
+surv.wg.reccurence_five.plot$plot <- surv.wg.reccurence_five.plot$plot +
+  geom_vline(xintercept = 1825)
+
+surv.wg.reccurence_five.plot
+ggsave("Results/Survival/continuous_strata_5_RpFS.png", width=7, height=7, dpi=300)
+
+################################################################################
+################################## Archives ####################################
 ################################################################################
 
 model.cox.simple <- coxph(data = surv.dt, Surv(time=time_os, VitalStatus) ~ TMB_per_region.genome_TMB)
@@ -120,11 +259,5 @@ plot(cox.zph(model.cox.pstage.strata))
 abline(h=0, col="red")
 
 
-
-## TODO
-## - Correct the assumptions of the cox model: the proportional hazards assumption is met for the simple model, but not the linearity. ** Correct the linearity
-## - Make Cox models for drivers
-## - Look at survival and reccurence (<2 years, >= 2 years)
-## - Check the count of unique mutations throughout the cohort. Then, separate the cohort into high and low OS to check the ratio of mutations (Sebastien's idea).
 
 
