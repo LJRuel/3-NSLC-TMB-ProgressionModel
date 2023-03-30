@@ -124,7 +124,8 @@ freq <- ggplot(data = window.1.dt[c(2:.N)], aes(x=start, fill = region_type)) +
   theme_classic() +
   theme(axis.title.x = element_blank(),
         axis.ticks.x = element_blank(), 
-        axis.text.x = element_blank()) +
+        axis.text.x = element_blank(),
+        legend.position = "none") +
   scale_fill_manual(values = c("#ff595e", "#ffca3a", "#8ac926", "#1982c4", "#6a4c93"),
                     name = "Variant type",
                     labels = c("exonic", "intergenic", "intronic", "splice site")) +
@@ -151,5 +152,5 @@ endb.anno <- autoplot(ensdb,
 cowplot::plot_grid(freq, endb.anno, ncol=1, align = "v", axis = "b")
 
 ## TODO
-## - Align the axes from top and bottom plots
+## - Align the axes from top and bottom plots when the legend is on
 ## - Loop to plot the other hotspots
