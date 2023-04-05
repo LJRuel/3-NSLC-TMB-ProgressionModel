@@ -1,7 +1,4 @@
 
-## TODO
-# - Compare TMBs with SBS signatures
-
 library(GenomicFeatures)
 library(tidyverse)
 library(data.table)
@@ -11,6 +8,7 @@ library(karyoploteR)
 library(regioneR)
 library(corrplot)
 library(Hmisc)
+library(ggsci)
 
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 
@@ -35,7 +33,11 @@ surv.dt <- surv.dt %>% mutate(TMB_high_low_old = case_when(complete_WGS_TMB >= 1
                               recurrence.two = case_when(time_RpFS >= 730 ~ ">=2",
                                                          time_RpFS < 730 ~ "<2"),
                               recurrence.five = case_when(time_RpFS >= 1825 ~ ">=5",
-                                                          time_RpFS < 1825 ~ "<5"))
+                                                          time_RpFS < 1825 ~ "<5"),
+                              os.two = case_when(time_os >= 730 ~ ">=2",
+                                                 time_os < 730 ~ "<2"),
+                              os.five = case_when(time_os >= 1825 ~ ">=5",
+                                                  time_os < 1825 ~ "<5"))
 # Changing comorbidities NA to None
 surv.dt[, comorbidities:=replace_na(comorbidities, "None")]
 
@@ -224,7 +226,42 @@ ggplot(SBS.df, aes(x=reorder(gsub("NSLC-","",as.character(SBS.df[, Samples])), -
 ggsave("Results/Misc plots/SBS_ordered_age.png", width=8, height=8, dpi=300)
 
 ################################################################################
-############################## Frequency plots #################################
+############### Variants plotted according to their CADD score #################
+################################################################################
+
+# CADD score info: https://cadd.gs.washington.edu/info
+
+# Top 10% PHRED scaled CADD score cutoff for hotspot regions
+hotspot_cutoff.cadd <- 10
+
+# Arranging chromosome names for ggplot
+chrom_name <- c(1:22, 'X', 'Y')
+VEP_data_all_patients$CHROM <- factor(VEP_data_all_patients$CHROM, levels=chrom_name)
+
+# Plot
+ggplot(VEP_data_all_patients, 
+       aes(x=POS, y=CADD_PHRED, color = CHROM)) +
+  geom_line(linewidth = 0.2) +
+  geom_hline(yintercept = hotspot_cutoff.cadd, color = "red") +
+  theme_classic() +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        strip.background = element_blank(),
+        strip.placement='outside', # for facet_grid label position
+        panel.spacing = unit(0.3, "lines"),
+        legend.position = "none") + # for facet_grid space between panels
+  scale_y_continuous(limits = c(0,60), breaks = seq(0,60,5)) +
+  xlab("Chromosomes") + 
+  ylab("PHRED CADD score") +
+  facet_grid(~CHROM,
+             space = "free_x",
+             scales = "free_x",
+             switch = "x")
+
+ggsave(file=glue("Results/Misc plots/CADD_score_frequency.png"), width=15, height=7, dpi=300)
+
+################################################################################
+############### Variants plotted according to their frequency ##################
 ################################################################################
 
 ############ With the frequency pre calculated by sliding windows ##############
@@ -247,7 +284,7 @@ hotspot_cutoff.third_quartile <- quantile(chrom_frequency$variant_frequency)[4]
 hotspot_cutoff.cadd <- quantile(chrom_frequency$CADD_PHRED)[4]
 
 # Plotting the frequency
-ggplot(data = chrom_frequency[window_end <= 100000], aes(x = window_start, y = variant_frequency, color = chrom)) + 
+ggplot(data = chrom_frequency, aes(x = window_start, y = variant_frequency, color = chrom)) + 
   geom_line(linewidth = 0.2) +
   geom_area() +
   geom_hline(yintercept = hotspot_cutoff, color = "red") + 
@@ -304,58 +341,458 @@ frequency.all.gp <- ggplot(data = chrom_frequency.all, aes(x = window_start, y =
 ggsave(frequency.all.gp, file=glue("Results/frequency plots/all_sw_frequency.png"), width=15, height=7, dpi=300)
 
 
-############# With the frequency directly calculated by karyoteR ###############
+################################################################################
+################################ RpFS graphs ###################################
+################################################################################
 
-# Preparing the GRanges for the karyoploteR plots
-somatic.mutations.all <- toGRanges(VEP_data_all_patients[, list(CHROM, POS, END_POS, ID, REF, ALT, region_type, mutation_type)])
-seqlevelsStyle(somatic.mutations.all) <- "UCSC"
+# Correlation between WGS TMB and RFS
+ggplot(na.omit(surv.dt, cols = "time_RpFS"), 
+       aes(y = complete_WGS_TMB, x = time_RpFS, color = factor(RpFS_indicator))) +
+  geom_point(size=2) +
+  theme_classic() +
+  ylab("Whole-genome TMB") +
+  xlab("Relapse-free survival") +
+  scale_color_discrete(name = "Relapse") +
+  geom_vline(xintercept = 730, lty = "dashed") +
+  geom_vline(xintercept = 1825, lty = "dashed") +
+  annotate("text", x=730, y = 10, label = "2 years", hjust = -0.1) + 
+  annotate("text", x=1825, y = 10, label = "5 years", hjust = -0.1)
 
-# frequency plot for all combined chromosomes. The frequency is directly calculated by karyoteR
-#png(file="Results/Frequency plots/all_patients_frequency.png", width=465, height=225, units = "mm", res=300)
+ggsave(file=glue("Results/RFS plots/RFS_WGS_correlation.png"), width=7, height=7, dpi=300)
 
-pp <- getDefaultPlotParams(plot.type = 4)
-pp$data1inmargin <- 0
-pp$bottommargin <- 20
+# Correlation between WES TMB and RFS
+ggplot(na.omit(surv.dt, cols = "time_RpFS"), 
+       aes(y = complete_WES_TMB, x = time_RpFS, color = factor(RpFS_indicator))) +
+  geom_point(size=2) +
+  theme_classic() +
+  ylab("Whole-exome TMB") +
+  xlab("Relapse-free survival") +
+  scale_color_discrete(name = "Relapse") +
+  geom_vline(xintercept = 730, lty = "dashed") +
+  geom_vline(xintercept = 1825, lty = "dashed") +
+  annotate("text", x=730, y = 10, label = "2 years", hjust = -0.1) + 
+  annotate("text", x=1825, y = 10, label = "5 years", hjust = -0.1)
 
-kp <- plotKaryotype(plot.type=4, ideogram.plotter = NULL,
-                    labels.plotter = NULL, plot.params = pp)
-kpAddCytobandsAsLine(kp)
-kpAddChromosomeNames(kp, srt=45)
-#kpPlotDensity(kp, data = somatic.mutations.all, window.size = 10e6)
-kpfrequency <- kpPlotDensity(kp, data = somatic.mutations.all, col = "#F6D55C", window.size = 10e6)
-kpfrequency$latest.plot$computed.values$frequency
-kpfrequency$latest.plot$computed.values$windows
-kpAddLabels(kp, labels = c("Mutation frequency"), srt=90, pos=1, label.margin = 0.04)
-legend("topleft", 
-       title = "Window size",
-       legend = "1 Mb",
-       #legend = c("1 Mb", "10 Mb"),
-       xjust = 1,
-       lty = 1,
-       col = "#F6D55C",
-       #col = c("#F6D55C", "black"),
-       lwd = 2,
-       seg.len = 1,
-       xpd = TRUE,
-       bty = "n",
-       x.intersp = 0.5)
+ggsave(file=glue("Results/RFS plots/RFS_WES_correlation.png"), width=7, height=7, dpi=300)
 
-#dev.off()
+## 2 years RFS with path stage annotation
+ggplot(na.omit(surv.dt, cols="recurrence.two"), aes(x=complete_WGS_TMB)) +
+  geom_density() +
+  lims(x = c(0,10), y=c(0,0.6)) +
+  facet_grid(~recurrence.two)
+shapiro.test(surv.dt[recurrence.two == "<2", complete_WGS_TMB])
+shapiro.test(surv.dt[recurrence.two == ">=2", complete_WGS_TMB])
 
-# frequency plot for each chromosome
-for(chromosome in seqlevels(somatic.mutations.all)) {
-  # png(file=glue("Results/frequency plots/{chromosome}_frequency.png"),
-  #     width=465, height=225, units = "mm", res=300)
-  
-  kp <- plotKaryotype(plot.type=4, ideogram.plotter = NULL,
-                      labels.plotter = NULL, plot.params = pp, chromosomes = chromosome)
-  kpAddCytobandsAsLine(kp)
-  kpAddChromosomeNames(kp, srt=45)
-  kpPlotDensity(kp, data = somatic.mutations.all)
-  kpAddLabels(kp, labels = c("Mutation frequency"), srt=90, pos=1, label.margin = 0.04)
-  
-  # dev.off()
-}
+ggplot(na.omit(surv.dt, cols="recurrence.two"), aes(x=complete_WES_TMB)) +
+  geom_density() +
+  lims(x = c(0,8), y =c(0, 0.7)) +
+  facet_grid(~recurrence.two)
+shapiro.test(surv.dt[recurrence.two == "<2", complete_WES_TMB])
+shapiro.test(surv.dt[recurrence.two == ">=2", complete_WES_TMB])
+
+# 2 years RFS x continuous WGS TMB and path stage
+WGS.two.WRS <- wilcox.test(complete_WGS_TMB ~ recurrence.two, data = surv.dt, # Comparing the distribution between the two RFS survival subgroups
+                           na.rm = TRUE, paired = FALSE, exact = FALSE, conf.int = TRUE)
+WGS.two.WRS.p <- round(WGS.two.WRS$p.value, digits = 3)
+
+ggplot(na.omit(surv.dt, cols="recurrence.two"), aes(x=recurrence.two, y=complete_WGS_TMB)) +
+  geom_boxplot(width=0.5, outlier.colour = "white") +
+  geom_jitter(aes(color = pathological_stage_refactor), 
+              size = 2, width = 0.15) +
+  geom_hline(yintercept = 1.7, color = "red") +
+  geom_vline(xintercept = 1.5, lty = "dashed") +
+  theme_classic() +
+  xlab("Relapse free survival") +
+  ylab("Whole-genome TMB") + 
+  scale_x_discrete(labels = c("<2" = "<2 years\nn=20",
+                              ">=2" = "\u22652 years\nn=60")) +
+  scale_y_continuous(breaks = c(seq(0,10,1), 1.7),
+                     limits = c(0,10), expand = c(0,0)) +
+  scale_color_discrete(name = "Pathological stage") +
+  theme(axis.text.y = element_text(color = c(rep("black", 11), "red")),
+        axis.ticks.y = element_line(color = c(rep("black", 11), "red"))) +
+  annotate("text", x=0.5, y = 1.55, label = "n=8", hjust = "left") +
+  annotate("text", x=0.5, y = 1.90, label = "n=12", hjust = "left") +
+  annotate("text", x=2.4, y = 1.55, label = "n=42", hjust = "left") +
+  annotate("text", x=2.4, y = 1.90, label = "n=18", hjust = "left") +
+  annotate("text", x=0, y = 10, label = glue("Wilcoxon Rank Sum p={WGS.two.WRS.p}"), hjust = -0.05) +
+  coord_cartesian(clip = "off")
+
+ggsave(file=glue("Results/RFS plots/RFS_WGS_2years_path.png"), width=7, height=7, dpi=300)
+
+# 2 years RFS x continuous WES TMB and path stage
+WES.two.WRS <- wilcox.test(complete_WES_TMB ~ recurrence.two, data = surv.dt, # Comparing the distribution between the two RFS survival subgroups
+                           na.rm = TRUE, paired = FALSE, exact = FALSE, conf.int = TRUE)
+WES.two.WRS.p <- round(WES.two.WRS$p.value, digits = 3)
+
+ggplot(na.omit(surv.dt, cols="recurrence.two"), aes(x=recurrence.two, y=complete_WES_TMB)) +
+  geom_boxplot(width=0.5, outlier.colour = "white") +
+  geom_jitter(aes(color = pathological_stage_refactor), 
+              size = 2, width = 0.15) +
+  geom_hline(yintercept = 1.2, color = "red") +
+  geom_vline(xintercept = 1.5, lty = "dashed") +
+  theme_classic() +
+  xlab("Relapse free survival") +
+  ylab("Whole-exome TMB") +
+  scale_x_discrete(labels = c("<2" = "<2 years\nn=20",
+                              ">=2" = "\u22652 years\nn=60")) +
+  scale_y_continuous(breaks = c(seq(0,8,1), 1.2),
+                     limits = c(0,8), expand = c(0,0)) +
+  scale_color_discrete(name = "Pathological stage") +
+  theme(axis.text.y = element_text(color = c(rep("black", 9), "red")),
+        axis.ticks.y = element_line(color = c(rep("black", 9), "red"))) +
+  annotate("text", x=0.5, y = 1.05, label = "n=9", hjust = "left") +
+  annotate("text", x=0.5, y = 1.40, label = "n=11", hjust = "left") +
+  annotate("text", x=2.4, y = 1.05, label = "n=41", hjust = "left") +
+  annotate("text", x=2.4, y = 1.40, label = "n=19", hjust = "left") +
+  annotate("text", x=0, y = 8, label = glue("Wilcoxon Rank Sum p={WES.two.WRS.p}"), hjust = -0.05) +
+  coord_cartesian(clip = "off")
+
+ggsave(file=glue("Results/RFS plots/RFS_WES_2years_path.png"), width=7, height=7, dpi=300)
+
+## 5 years RFS with path stage annotation
+ggplot(na.omit(surv.dt, cols="recurrence.five"), aes(x=complete_WGS_TMB)) +
+  geom_density() +
+  lims(x = c(0,10), y =c(0, 0.6)) +
+  facet_grid(~recurrence.five)
+shapiro.test(surv.dt[recurrence.five == "<5", complete_WGS_TMB])
+shapiro.test(surv.dt[recurrence.five == ">=5", complete_WGS_TMB])
+
+ggplot(na.omit(surv.dt, cols="recurrence.five"), aes(x=complete_WES_TMB)) +
+  geom_density() +
+  lims(x = c(0,8), y =c(0, 0.7)) +
+  facet_grid(~recurrence.five)
+shapiro.test(surv.dt[recurrence.five == "<5", complete_WES_TMB])
+shapiro.test(surv.dt[recurrence.five == ">=5", complete_WES_TMB])
+
+# 5 years RFS x continuous WGS TMB and path stage
+WGS.five.WRS <- wilcox.test(complete_WGS_TMB ~ recurrence.five, data = surv.dt, # Comparing the distribution between the two RFS survival subgroups
+                            na.rm = TRUE, paired = FALSE, exact = FALSE, conf.int = TRUE)
+WGS.five.WRS.p <- round(WGS.five.WRS$p.value, digits = 3)
+
+ggplot(na.omit(surv.dt, cols="recurrence.five"), aes(x=recurrence.five, y=complete_WGS_TMB)) +
+  geom_boxplot(width=0.5, outlier.colour = "white") +
+  geom_jitter(aes(color = pathological_stage_refactor), 
+              size = 2, width = 0.15) +
+  geom_hline(yintercept = 1.7, color = "red") +
+  geom_vline(xintercept = 1.5, lty = "dashed") +
+  theme_classic() +
+  xlab("Relapse free survival") +
+  ylab("Whole-genome TMB") + 
+  scale_x_discrete(labels = c("<5" = "<5 years\nn=48",
+                              ">=5" = "\u22655 years\nn=32")) +
+  scale_y_continuous(breaks = c(seq(0,10,1), 1.7),
+                     limits = c(0,10), expand = c(0,0)) +
+  scale_color_discrete(name = "Pathological stage") +
+  theme(axis.text.y = element_text(color = c(rep("black", 11), "red")),
+        axis.ticks.y = element_line(color = c(rep("black", 11), "red"))) +
+  annotate("text", x=0.5, y = 1.55, label = "n=28", hjust = "left") +
+  annotate("text", x=0.5, y = 1.90, label = "n=20", hjust = "left") +
+  annotate("text", x=2.4, y = 1.55, label = "n=22", hjust = "left") +
+  annotate("text", x=2.4, y = 1.90, label = "n=10", hjust = "left") +
+  annotate("text", x=0, y = 10, label = glue("Wilcoxon Rank Sum p={WGS.five.WRS.p}"), hjust = -0.05) +
+  coord_cartesian(clip = "off")
+
+ggsave(file=glue("Results/RFS plots/RFS_WGS_5years_path.png"), width=7, height=7, dpi=300)
+
+# 5 years RFS x continuous WES TMB and path stage
+WES.five.WRS <- wilcox.test(complete_WES_TMB ~ recurrence.five, data = surv.dt, # Comparing the distribution between the two RFS survival subgroups
+                            na.rm = TRUE, paired = FALSE, exact = FALSE, conf.int = TRUE)
+WES.five.WRS.p <- round(WES.five.WRS$p.value, digits = 3)
+
+ggplot(na.omit(surv.dt, cols="recurrence.five"), aes(x=recurrence.five, y=complete_WES_TMB)) +
+  geom_boxplot(width=0.5, outlier.colour = "white") +
+  geom_jitter(aes(color = pathological_stage_refactor), 
+              size = 2, width = 0.15) +
+  geom_hline(yintercept = 1.2, color = "red") +
+  geom_vline(xintercept = 1.5, lty = "dashed") +
+  theme_classic() +
+  xlab("Relapse free survival") +
+  ylab("Whole-exome TMB") +
+  scale_x_discrete(labels = c("<5" = "<5 years\nn=48",
+                              ">=5" = "\u22655 years\nn=32")) +
+  scale_y_continuous(breaks = c(seq(0,8,1), 1.2),
+                     limits = c(0,8), expand = c(0,0)) +
+  scale_color_discrete(name = "Pathological stage") +
+  theme(axis.text.y = element_text(color = c(rep("black", 9), "red")),
+        axis.ticks.y = element_line(color = c(rep("black", 9), "red"))) +
+  annotate("text", x=0.5, y = 1.05, label = "n=28", hjust = "left") +
+  annotate("text", x=0.5, y = 1.40, label = "n=20", hjust = "left") +
+  annotate("text", x=2.4, y = 1.05, label = "n=22", hjust = "left") +
+  annotate("text", x=2.4, y = 1.40, label = "n=10", hjust = "left") +
+  annotate("text", x=0, y = 8, label = glue("Wilcoxon Rank Sum p={WES.five.WRS.p}"), hjust = -0.05) +
+  coord_cartesian(clip = "off")
+
+ggsave(file=glue("Results/RFS plots/RFS_WES_5years_path.png"), width=7, height=7, dpi=300)
+
+## 2 years RFS with relapse annotation
+# 2 years RFS x continuous WGS TMB and event
+WGS.two.WRS.event <- wilcox.test(complete_WGS_TMB ~ recurrence.two, data = surv.dt[RpFS_indicator == 1],
+                                 na.rm = TRUE, paired = FALSE, exact = TRUE, conf.int = TRUE) # Comparing the event (replase or not) distribution between the two RFS survival subgroups
+WGS.two.WRS.event.p <- round(WGS.two.WRS.event$p.value, digits = 3)
+
+ggplot(na.omit(surv.dt, cols="recurrence.two"), aes(x=recurrence.two, y=complete_WGS_TMB)) +
+  geom_boxplot(width=0.5, outlier.colour = "white") +
+  geom_jitter(aes(color = factor(RpFS_indicator)), 
+              size = 2, width = 0.15) +
+  geom_hline(yintercept = 1.7, color = "red") +
+  geom_vline(xintercept = 1.5, lty = "dashed") +
+  theme_classic() +
+  xlab("Relapse free survival") +
+  ylab("Whole-genome TMB") + 
+  scale_x_discrete(labels = c("<2" = "<2 years\nn=20",
+                              ">=2" = "\u22652 years\nn=60")) +
+  scale_y_continuous(breaks = c(seq(0,10,1), 1.7),
+                     limits = c(0,10), expand = c(0,0)) +
+  scale_color_discrete(name = "Relapse") +
+  theme(axis.text.y = element_text(color = c(rep("black", 11), "red")),
+        axis.ticks.y = element_line(color = c(rep("black", 11), "red"))) +
+  annotate("text", x=0.5, y = 1.55, label = "n=8", hjust = "left") +
+  annotate("text", x=0.5, y = 1.90, label = "n=12", hjust = "left") +
+  annotate("text", x=2.4, y = 1.55, label = "n=42", hjust = "left") +
+  annotate("text", x=2.4, y = 1.90, label = "n=18", hjust = "left") +
+  annotate("text", x=0, y = 10, label = glue("Wilcoxon Rank Sum p={WGS.two.WRS.p}"), hjust = -0.05) +
+  annotate("text", x=0, y = 9.5, label = glue("Event Wilcoxon Rank Sum p={WGS.two.WRS.event.p}"), colour = "#00b0c4", hjust = -0.05) +
+  coord_cartesian(clip = "off")
+
+ggsave(file=glue("Results/RFS plots/RFS_WGS_2years_event.png"), width=7, height=7, dpi=300)
+
+# 2 years RFS x continuous WES TMB and event
+WES.two.WRS.event <- wilcox.test(complete_WES_TMB ~ recurrence.two, data = surv.dt[RpFS_indicator == 1],
+                                 na.rm = TRUE, paired = FALSE, exact = TRUE, conf.int = TRUE) # Comparing the event (relapse or not) distribution between the two RFS survival subgroups
+WES.two.WRS.event.p <- round(WES.two.WRS.event$p.value, digits = 3)
+
+ggplot(na.omit(surv.dt, cols="recurrence.two"), aes(x=recurrence.two, y=complete_WES_TMB)) +
+  geom_boxplot(width=0.5, outlier.colour = "white") +
+  geom_jitter(aes(color = factor(RpFS_indicator)), 
+              size = 2, width = 0.15) +
+  geom_hline(yintercept = 1.2, color = "red") +
+  geom_vline(xintercept = 1.5, lty = "dashed") +
+  theme_classic() +
+  xlab("Relapse free survival") +
+  ylab("Whole-exome TMB") +
+  scale_x_discrete(labels = c("<2" = "<2 years\nn=20",
+                              ">=2" = "\u22652 years\nn=60")) +
+  scale_y_continuous(breaks = c(seq(0,8,1), 1.2),
+                     limits = c(0,8), expand = c(0,0)) +
+  scale_color_discrete(name = "Relapse") +
+  theme(axis.text.y = element_text(color = c(rep("black", 9), "red")),
+        axis.ticks.y = element_line(color = c(rep("black", 9), "red"))) +
+  annotate("text", x=0.5, y = 1.05, label = "n=9", hjust = "left") +
+  annotate("text", x=0.5, y = 1.40, label = "n=11", hjust = "left") +
+  annotate("text", x=2.4, y = 1.05, label = "n=41", hjust = "left") +
+  annotate("text", x=2.4, y = 1.40, label = "n=19", hjust = "left") +
+  annotate("text", x=0, y = 8, label = glue("Wilcoxon Rank Sum p={WES.two.WRS.p}"), hjust = -0.05) +
+  annotate("text", x=0, y = 7.6, label = glue("Event Wilcoxon Rank Sum p={WES.two.WRS.event.p}"), colour = "#00b0c4", hjust = -0.05) +
+  coord_cartesian(clip = "off")
+
+ggsave(file=glue("Results/RFS plots/RFS_WES_2years_event.png"), width=7, height=7, dpi=300)
+
+## 5 years RFS with path stage annotation
+# 5 years RFS x continuous WGS TMB and event
+WGS.five.WRS.event <- wilcox.test(complete_WGS_TMB ~ recurrence.five, data = surv.dt[RpFS_indicator == 1],
+                                  na.rm = TRUE, paired = FALSE, exact = TRUE, conf.int = TRUE) # Comparing the event (relapse or not) distribution between the two RFS survival subgroups
+WGS.five.WRS.event.p <- round(WGS.five.WRS.event$p.value, digits = 3)
+
+ggplot(na.omit(surv.dt, cols="recurrence.five"), aes(x=recurrence.five, y=complete_WGS_TMB)) +
+  geom_boxplot(width=0.5, outlier.colour = "white") +
+  geom_jitter(aes(color = factor(RpFS_indicator)), 
+              size = 2, width = 0.15) +
+  geom_hline(yintercept = 1.7, color = "red") +
+  geom_vline(xintercept = 1.5, lty = "dashed") +
+  theme_classic() +
+  xlab("Relapse free survival") +
+  ylab("Whole-genome TMB") + 
+  scale_x_discrete(labels = c("<5" = "<5 years\nn=48",
+                              ">=5" = "\u22655 years\nn=32")) +
+  scale_y_continuous(breaks = c(seq(0,10,1), 1.7),
+                     limits = c(0,10), expand = c(0,0)) +
+  scale_color_discrete(name = "Relapse") +
+  theme(axis.text.y = element_text(color = c(rep("black", 11), "red")),
+        axis.ticks.y = element_line(color = c(rep("black", 11), "red"))) +
+  annotate("text", x=0.5, y = 1.55, label = "n=28", hjust = "left") +
+  annotate("text", x=0.5, y = 1.90, label = "n=20", hjust = "left") +
+  annotate("text", x=2.4, y = 1.55, label = "n=22", hjust = "left") +
+  annotate("text", x=2.4, y = 1.90, label = "n=10", hjust = "left") +
+  annotate("text", x=0, y = 10, label = glue("Wilcoxon Rank Sum p={WGS.five.WRS.p}"), hjust = -0.05) +
+  #annotate("text", x=0, y = 9.5, label = glue("Event Wilcoxon Rank Sum p={WGS.five.WRS.event.p}"), colour = "#00b0c4", hjust = -0.05) +
+  coord_cartesian(clip = "off")
+
+ggsave(file=glue("Results/RFS plots/RFS_WGS_5years_event.png"), width=7, height=7, dpi=300)
+
+# 5 years RFS x continuous WES TMB and event
+WES.five.WRS.event <- wilcox.test(complete_WES_TMB ~ recurrence.five, data = surv.dt[RpFS_indicator == 1], # Comparing the distribution between the two RFS survival subgroups
+                                  na.rm = TRUE, paired = FALSE, exact = TRUE, conf.int = TRUE)
+WES.five.WRS.event.p <- round(WES.five.WRS.event$p.value, digits = 3)
+
+ggplot(na.omit(surv.dt, cols="recurrence.five"), aes(x=recurrence.five, y=complete_WES_TMB)) +
+  geom_boxplot(width=0.5, outlier.colour = "white") +
+  geom_jitter(aes(color = factor(RpFS_indicator)), 
+              size = 2, width = 0.15) +
+  geom_hline(yintercept = 1.2, color = "red") +
+  geom_vline(xintercept = 1.5, lty = "dashed") +
+  theme_classic() +
+  xlab("Relapse free survival") +
+  ylab("Whole-exome TMB") +
+  scale_x_discrete(labels = c("<5" = "<5 years\nn=48",
+                              ">=5" = "\u22655 years\nn=32")) +
+  scale_y_continuous(breaks = c(seq(0,8,1), 1.2),
+                     limits = c(0,8), expand = c(0,0)) +
+  scale_color_discrete(name = "Relapse") +
+  theme(axis.text.y = element_text(color = c(rep("black", 9), "red")),
+        axis.ticks.y = element_line(color = c(rep("black", 9), "red"))) +
+  annotate("text", x=0.5, y = 1.05, label = "n=28", hjust = "left") +
+  annotate("text", x=0.5, y = 1.40, label = "n=20", hjust = "left") +
+  annotate("text", x=2.4, y = 1.05, label = "n=22", hjust = "left") +
+  annotate("text", x=2.4, y = 1.40, label = "n=10", hjust = "left") +
+  annotate("text", x=0, y = 8, label = glue("Wilcoxon Rank Sum p={WES.five.WRS.p}"), hjust = -0.05) +
+  #annotate("text", x=0, y = 7.6, label = glue("Event Wilcoxon Rank Sum p={WES.five.WRS.event.p}"), colour = "#00b0c4", hjust = -0.05) +
+  coord_cartesian(clip = "off")
+
+ggsave(file=glue("Results/RFS plots/RFS_WES_5years_event.png"), width=7, height=7, dpi=300)
+
+
+################################################################################
+################################# OS graphs ####################################
+################################################################################
+
+## 5 years OS with path stage annotation
+ggplot(na.omit(surv.dt, cols="os.five"), aes(x=complete_WGS_TMB)) +
+  geom_density() +
+  lims(x = c(0,10), y =c(0, 0.6)) +
+  facet_grid(~os.five)
+shapiro.test(surv.dt[os.five == "<5", complete_WGS_TMB])
+shapiro.test(surv.dt[os.five == ">=5", complete_WGS_TMB])
+
+ggplot(na.omit(surv.dt, cols="os.five"), aes(x=complete_WES_TMB)) +
+  geom_density() +
+  lims(x = c(0,8), y =c(0, 0.7)) +
+  facet_grid(~os.five)
+shapiro.test(surv.dt[os.five == "<5", complete_WES_TMB])
+shapiro.test(surv.dt[os.five == ">=5", complete_WES_TMB])
+
+# 5 years OS x continuous WGS TMB and path stage
+WGS.os.five.WRS <- wilcox.test(complete_WGS_TMB ~ os.five, data = surv.dt, # Comparing the distribution between the two OS survival subgroups
+                            na.rm = TRUE, paired = FALSE, exact = FALSE, conf.int = TRUE)
+WGS.os.five.WRS.p <- round(WGS.os.five.WRS$p.value, digits = 3)
+
+ggplot(na.omit(surv.dt, cols="os.five"), aes(x=os.five, y=complete_WGS_TMB)) +
+  geom_boxplot(width=0.5, outlier.colour = "white") +
+  geom_jitter(aes(color = pathological_stage_refactor), 
+              size = 2, width = 0.15) +
+  geom_hline(yintercept = 1.7, color = "red") +
+  geom_vline(xintercept = 1.5, lty = "dashed") +
+  theme_classic() +
+  xlab("Overall survival") +
+  ylab("Whole-genome TMB") + 
+  scale_x_discrete(labels = c("<5" = "<5 years\nn=33",
+                              ">=5" = "\u22655 years\nn=49")) +
+  scale_y_continuous(breaks = c(seq(0,10,1), 1.7),
+                     limits = c(0,10), expand = c(0,0)) +
+  scale_color_discrete(name = "Pathological stage") +
+  theme(axis.text.y = element_text(color = c(rep("black", 11), "red")),
+        axis.ticks.y = element_line(color = c(rep("black", 11), "red"))) +
+  annotate("text", x=0.5, y = 1.55, label = "n=18", hjust = "left") +
+  annotate("text", x=0.5, y = 1.90, label = "n=15", hjust = "left") +
+  annotate("text", x=2.4, y = 1.55, label = "n=32", hjust = "left") +
+  annotate("text", x=2.4, y = 1.90, label = "n=17", hjust = "left") +
+  annotate("text", x=0, y = 10, label = glue("Wilcoxon Rank Sum p={WGS.os.five.WRS.p}"), hjust = -0.05) +
+  coord_cartesian(clip = "off")
+
+ggsave(file=glue("Results/OS plots/OS_WGS_5years_path.png"), width=7, height=7, dpi=300)
+
+# 5 years OS x continuous WES TMB and path stage
+WES.os.five.WRS <- wilcox.test(complete_WES_TMB ~ os.five, data = surv.dt, # Comparing the distribution between the two OS survival subgroups
+                            na.rm = TRUE, paired = FALSE, exact = FALSE, conf.int = TRUE)
+WES.os.five.WRS.p <- round(WES.os.five.WRS$p.value, digits = 3)
+
+ggplot(na.omit(surv.dt, cols="os.five"), aes(x=os.five, y=complete_WES_TMB)) +
+  geom_boxplot(width=0.5, outlier.colour = "white") +
+  geom_jitter(aes(color = pathological_stage_refactor), 
+              size = 2, width = 0.15) +
+  geom_hline(yintercept = 1.2, color = "red") +
+  geom_vline(xintercept = 1.5, lty = "dashed") +
+  theme_classic() +
+  xlab("Overall survival") +
+  ylab("Whole-exome TMB") +
+  scale_x_discrete(labels = c("<5" = "<5 years\nn=33",
+                              ">=5" = "\u22655 years\nn=49")) +
+  scale_y_continuous(breaks = c(seq(0,8,1), 1.2),
+                     limits = c(0,8), expand = c(0,0)) +
+  scale_color_discrete(name = "Pathological stage") +
+  theme(axis.text.y = element_text(color = c(rep("black", 9), "red")),
+        axis.ticks.y = element_line(color = c(rep("black", 9), "red"))) +
+  annotate("text", x=0.5, y = 1.05, label = "n=18", hjust = "left") +
+  annotate("text", x=0.5, y = 1.40, label = "n=15", hjust = "left") +
+  annotate("text", x=2.4, y = 1.05, label = "n=32", hjust = "left") +
+  annotate("text", x=2.4, y = 1.40, label = "n=17", hjust = "left") +
+  annotate("text", x=0, y = 8, label = glue("Wilcoxon Rank Sum p={WES.os.five.WRS.p}"), hjust = -0.05) +
+  coord_cartesian(clip = "off")
+
+ggsave(file=glue("Results/OS plots/OS_WES_5years_path.png"), width=7, height=7, dpi=300)
+
+## 5 years OS with path stage annotation
+# 5 years OS x continuous WGS TMB and event
+WGS.os.five.WRS.event <- wilcox.test(complete_WGS_TMB ~ os.five, data = surv.dt[RpFS_indicator == 1],
+                                  na.rm = TRUE, paired = FALSE, exact = TRUE, conf.int = TRUE) # Comparing the event (relapse or not) distribution between the two OS survival subgroups
+WGS.os.five.WRS.event.p <- round(WGS.os.five.WRS.event$p.value, digits = 3)
+
+ggplot(na.omit(surv.dt, cols="os.five"), aes(x=os.five, y=complete_WGS_TMB)) +
+  geom_boxplot(width=0.5, outlier.colour = "white") +
+  geom_jitter(aes(color = factor(VitalStatus)), 
+              size = 2, width = 0.15) +
+  geom_hline(yintercept = 1.7, color = "red") +
+  geom_vline(xintercept = 1.5, lty = "dashed") +
+  theme_classic() +
+  xlab("Overall survival") +
+  ylab("Whole-genome TMB") + 
+  scale_x_discrete(labels = c("<5" = "<5 years\nn=33",
+                              ">=5" = "\u22655 years\nn=49")) +
+  scale_y_continuous(breaks = c(seq(0,10,1), 1.7),
+                     limits = c(0,10), expand = c(0,0)) +
+  scale_color_discrete(name = "Death") +
+  theme(axis.text.y = element_text(color = c(rep("black", 11), "red")),
+        axis.ticks.y = element_line(color = c(rep("black", 11), "red"))) +
+  annotate("text", x=0.5, y = 1.55, label = "n=18", hjust = "left") +
+  annotate("text", x=0.5, y = 1.90, label = "n=15", hjust = "left") +
+  annotate("text", x=2.4, y = 1.55, label = "n=32", hjust = "left") +
+  annotate("text", x=2.4, y = 1.90, label = "n=17", hjust = "left") +
+  annotate("text", x=0, y = 10, label = glue("Wilcoxon Rank Sum p={WGS.five.WRS.p}"), hjust = -0.05) +
+  annotate("text", x=0, y = 9.5, label = glue("Event Wilcoxon Rank Sum p={WGS.os.five.WRS.event.p}"), colour = "#00b0c4", hjust = -0.05) +
+  coord_cartesian(clip = "off")
+
+ggsave(file=glue("Results/OS plots/OS_WGS_5years_event.png"), width=7, height=7, dpi=300)
+
+# 5 years OS x continuous WES TMB and event
+WES.os.five.WRS.event <- wilcox.test(complete_WES_TMB ~ os.five, data = surv.dt[RpFS_indicator == 1], # Comparing the distribution between the two OS survival subgroups
+                                  na.rm = TRUE, paired = FALSE, exact = TRUE, conf.int = TRUE)
+WES.os.five.WRS.event.p <- round(WES.os.five.WRS.event$p.value, digits = 3)
+
+ggplot(na.omit(surv.dt, cols="os.five"), aes(x=os.five, y=complete_WES_TMB)) +
+  geom_boxplot(width=0.5, outlier.colour = "white") +
+  geom_jitter(aes(color = factor(VitalStatus)), 
+              size = 2, width = 0.15) +
+  geom_hline(yintercept = 1.2, color = "red") +
+  geom_vline(xintercept = 1.5, lty = "dashed") +
+  theme_classic() +
+  xlab("Overall survival") +
+  ylab("Whole-exome TMB") +
+  scale_x_discrete(labels = c("<5" = "<5 years\nn=33",
+                              ">=5" = "\u22655 years\nn=49")) +
+  scale_y_continuous(breaks = c(seq(0,8,1), 1.2),
+                     limits = c(0,8), expand = c(0,0)) +
+  scale_color_discrete(name = "Death") +
+  theme(axis.text.y = element_text(color = c(rep("black", 9), "red")),
+        axis.ticks.y = element_line(color = c(rep("black", 9), "red"))) +
+  annotate("text", x=0.5, y = 1.05, label = "n=18", hjust = "left") +
+  annotate("text", x=0.5, y = 1.40, label = "n=15", hjust = "left") +
+  annotate("text", x=2.4, y = 1.05, label = "n=32", hjust = "left") +
+  annotate("text", x=2.4, y = 1.40, label = "n=17", hjust = "left") +
+  annotate("text", x=0, y = 8, label = glue("Wilcoxon Rank Sum p={WES.five.WRS.p}"), hjust = -0.05) +
+  annotate("text", x=0, y = 7.6, label = glue("Event Wilcoxon Rank Sum p={WES.os.five.WRS.event.p}"), colour = "#00b0c4", hjust = -0.05) +
+  coord_cartesian(clip = "off")
+
+ggsave(file=glue("Results/OS plots/OS_WES_5years_event.png"), width=7, height=7, dpi=300)
 
 ################################################################################
 ############################### Rainfall plots #################################
@@ -503,6 +940,58 @@ for(chromosome in seqlevels(somatic.mutations.all)) {
 #                                                                        end.field = "window_end"))
 # }
 # 
+# ############# With the frequency directly calculated by karyoteR ###############
+# 
+# # Preparing the GRanges for the karyoploteR plots
+# somatic.mutations.all <- toGRanges(VEP_data_all_patients[, list(CHROM, POS, END_POS, ID, REF, ALT, region_type, mutation_type)])
+# seqlevelsStyle(somatic.mutations.all) <- "UCSC"
+# 
+# # frequency plot for all combined chromosomes. The frequency is directly calculated by karyoteR
+# #png(file="Results/Frequency plots/all_patients_frequency.png", width=465, height=225, units = "mm", res=300)
+# 
+# pp <- getDefaultPlotParams(plot.type = 4)
+# pp$data1inmargin <- 0
+# pp$bottommargin <- 20
+# 
+# kp <- plotKaryotype(plot.type=4, ideogram.plotter = NULL,
+#                     labels.plotter = NULL, plot.params = pp)
+# kpAddCytobandsAsLine(kp)
+# kpAddChromosomeNames(kp, srt=45)
+# #kpPlotDensity(kp, data = somatic.mutations.all, window.size = 10e6)
+# kpfrequency <- kpPlotDensity(kp, data = somatic.mutations.all, col = "#F6D55C", window.size = 10e6)
+# kpfrequency$latest.plot$computed.values$frequency
+# kpfrequency$latest.plot$computed.values$windows
+# kpAddLabels(kp, labels = c("Mutation frequency"), srt=90, pos=1, label.margin = 0.04)
+# legend("topleft", 
+#        title = "Window size",
+#        legend = "1 Mb",
+#        #legend = c("1 Mb", "10 Mb"),
+#        xjust = 1,
+#        lty = 1,
+#        col = "#F6D55C",
+#        #col = c("#F6D55C", "black"),
+#        lwd = 2,
+#        seg.len = 1,
+#        xpd = TRUE,
+#        bty = "n",
+#        x.intersp = 0.5)
+# 
+# #dev.off()
+# 
+# # frequency plot for each chromosome
+# for(chromosome in seqlevels(somatic.mutations.all)) {
+#   # png(file=glue("Results/frequency plots/{chromosome}_frequency.png"),
+#   #     width=465, height=225, units = "mm", res=300)
+#   
+#   kp <- plotKaryotype(plot.type=4, ideogram.plotter = NULL,
+#                       labels.plotter = NULL, plot.params = pp, chromosomes = chromosome)
+#   kpAddCytobandsAsLine(kp)
+#   kpAddChromosomeNames(kp, srt=45)
+#   kpPlotDensity(kp, data = somatic.mutations.all)
+#   kpAddLabels(kp, labels = c("Mutation frequency"), srt=90, pos=1, label.margin = 0.04)
+#   
+#   # dev.off()
+# }
 
 
 
