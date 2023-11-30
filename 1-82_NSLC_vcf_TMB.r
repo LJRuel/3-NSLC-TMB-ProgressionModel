@@ -4,7 +4,7 @@
 
 ## Questions
 # - Est-ce qu'on garde les synonymnous variants?
-# - Est-ce qu'on garde les pseudogenes dans les variants annotes?
+# - Est-ce qu'on garde les pseudogenes dans les variants annot?s? -> Non
 
 library(GenomicFeatures)
 library(AnnotationHub)
@@ -69,6 +69,10 @@ clin_data <- clin_data[histology == 3, ]
 ################################# Regions size #################################
 ################################################################################
 
+# **** REDO WITH ENSEMBL PERL API 
+# For introns: https://www.biostars.org/p/10988/#14846 and https://www.biostars.org/p/44763/
+
+
 # References: https://gist.github.com/crazyhottommy/4681a30700b2c0c1ee02cbc875e7c4e9
 # The following code does not need to be run again. The relevent information is
 # contained in "GRCh37.region_sizes" variable at the end of this section. 
@@ -79,14 +83,13 @@ clin_data <- clin_data[histology == 3, ]
 # #AnnotationHub::query(ah, c('gtf', 'Homo_sapiens', 'GRCh37'))
 # GRCh37.gtf<- ah[['AH10684']]
 # 
-# 
 # ## subset the gtf files for only protein_coding genes and lincRNAs
 # GRCh37.gtf<- GRCh37.gtf[GRCh37.gtf$gene_biotype %in% c('protein_coding', 'lincRNA')]
 # table(GRCh37.gtf$gene_biotype)
 # 
 # ## make a txdb and keep conventional chromosomes
 # GRCh37.txdb <- makeTxDbFromGRanges(GRCh37.gtf)
-# GRCh37.txdb <- keepSeqlevels(GRCh37.txdb, c(1:22, 'X', 'Y'), pruning.mode = 'coarse')
+# GRCh37.txdb <- keepSeqlevels(GRCh37.txdb, c(1:22, 'X'), pruning.mode = 'coarse')
 # 
 # 
 # ## cds (not compiled in the total genome size because included in exons)
@@ -94,15 +97,16 @@ clin_data <- clin_data[histology == 3, ]
 # sum(width(cds))
 # 
 # 
-# ## exons: 101,578,353 bp
-# exons <- exonicParts(GRCh37.txdb) %>% unstrand() %>% GenomicRanges::reduce()
+# ## exons: 101,578,353 bp. Warning, this include UTR regions. The true exome used in WES is given by CDS.
+# exons <- exonsBy(GRCh37.txdb,by="gene") %>% GenomicRanges::reduce()
+# exons <- exonicParts(GRCh37.txdb, linked.to.single.gene.only=TRUE) %>% unstrand() %>% GenomicRanges::reduce()
 # exons_size <- as.double(sum(width(exons)))
 # mcols(exons)$region <- "exons"
 # 
 # 
 # ## introns: 1,345,484,609 bp
 # # The overlap with some exons is also removed by GenomicRanges::setdiff() function.
-# introns <- intronicParts(GRCh37.txdb) %>% unstrand() %>% GenomicRanges::setdiff(., exons)
+# introns <- intronicParts(GRCh37.txdb, linked.to.single.gene.only=TRUE) %>% unstrand() %>% GenomicRanges::setdiff(., exons)
 # introns_size <- as.double(sum(width(introns)))
 # mcols(introns)$region <- "introns"
 # 
@@ -120,7 +124,7 @@ clin_data <- clin_data[histology == 3, ]
 # setcolorder(all.regulatory, c("chromosome_name", "bound_seq_region_start", "bound_seq_region_end", "feature_type_name"))
 # all.regulatory <- all.regulatory[order(chromosome_name, bound_seq_region_start)]
 # regulatory <- GRanges(all.regulatory) %>% unstrand() %>% GenomicRanges::reduce()
-# regulatory <- keepSeqlevels(regulatory, c(1:22, "X", "Y"), pruning.mode = "coarse")
+# regulatory <- keepSeqlevels(regulatory, c(1:22, "X"), pruning.mode = "coarse")
 # regulatory_rest <- c(exons, introns) %>% sort() %>% GenomicRanges::setdiff(regulatory, .)
 # regulatory_size <- as.double(sum(width(regulatory_rest)))
 # mcols(regulatory_rest)$region <- "regulatory"
@@ -147,6 +151,19 @@ clin_data <- clin_data[histology == 3, ]
 # ## total genome size: 3,095,677,412 bp
 # genome <- c(exons, introns, regulatory_rest, intergenic_rest) %>% sort()
 # genome_size <- sum(c(exons_size, introns_size, regulatory_size, intergenic_size))
+# 
+# ## Final region sizes used for TMB calculation. 
+# GRCh37.region_sizes <- as.data.table(setNames(list(3095677412, 101578353, 1345484609, 221273310, 1427341140), 
+#                                               list("genome_size", "exons_size",
+#                                                    "introns_size", "regulatory_size",
+#                                                    "intergenic_size")))
+# 
+# ## Values are in bp. TMB requires values to be in megabase, therefore a simple division by 10^6 is needed when calculating TMBs.
+# GRCh37.region_sizes <- round(GRCh37.region_sizes/1e6, digits = 2)
+
+################################################################################
+################################# Regions size #################################
+################################################################################
 # 
 # ## Covered regions of the genome
 # # Formatting previous GRanges for use with KaryotypeR
@@ -197,20 +214,6 @@ clin_data <- clin_data[histology == 3, ]
 #        xjust = -1,
 #        cex=1.5)
 # dev.off()
-
-
-## Final region sizes used for TMB calculation. 
-GRCh37.region_sizes <- as.data.table(setNames(list(3095677412, 101578353, 1345484609, 221273310, 1427341140), 
-                                              list("genome_size", "exons_size",
-                                                   "introns_size", "regulatory_size",
-                                                   "intergenic_size")))
-
-## Values are in bp. TMB requires values to be in megabase, therefore a simple division by 10^6 is needed when calculating TMBs.
-GRCh37.region_sizes <- round(GRCh37.region_sizes/1e6, digits = 2)
-
-
-
-
 
 ################################################################################
 ################################## Main loop ###################################
@@ -435,6 +438,9 @@ for(Patient in Patients_list) {
                                      data.table(intergenic_SNV_TMB, intergenic_deletion_TMB, intergenic_insertion_TMB)), 
                                 nm = mutation_names)
   
+  
+  
+  
   ##############################################################################
   ########################## TMB data consolidation ############################
   ##############################################################################
@@ -459,6 +465,7 @@ description <- data.table(Field = c("TMB_per_region", "WGS_TMB_per_region", "WGS
 
 write.xlsx(VEP.TMB_records, "Data/VEP_82_NSLC_TMB.xlsx", sheetName = "TMB_data_n_82", row.names = FALSE)
 write.xlsx(description, "Data/VEP_82_NSLC_TMB.xlsx", sheetName = "Description", append = TRUE, row.names = FALSE)
+
 
 
 ################################################################################
@@ -494,3 +501,55 @@ write.xlsx(description, "Data/VEP_82_NSLC_TMB.xlsx", sheetName = "Description", 
 # # Summarize the number of variants by gene ID
 # splt.genes <- split(mcols(all.variants)$QUERYID, mcols(all.variants)$GENEID)
 # sapply(splt.genes, function(x) length(unique(x)))
+# 
+####################################################
+# 
+# ## Alternative to finding introns size
+# Import introns position
+# ensembl_introns <- fread("Data/intron_positions.txt", header = F)
+# 
+# # Data formatting
+# ensembl_introns[, c("chrom", "pos") := tstrsplit(V2, ":", fixed = TRUE)]
+# ensembl_introns[, c("start", "end") := tstrsplit(pos, "-", fixed = TRUE)]
+# ensembl_introns[, c("V2", "V3", "pos") := NULL]
+# colnames(ensembl_introns)[1] <- "Transcript_ID"
+# ensembl_introns[, c("start", "end") := lapply(.SD, as.numeric), .SDcols = c("start", "end")]
+# 
+# # Keeping only standard chromosomes
+# chrom_name <- c(1:22, 'X')
+# ensembl_introns <- ensembl_introns[chrom %in% chrom_name,]
+# ensembl_introns <- ensembl_introns[ensembl_introns[, do.call(order, .SD), .SDcols = c("chrom", "start")]]
+# ensembl_introns <- ensembl_introns[str_order(chrom, numeric = T)]
+# 
+# # Making the introns Granges
+# introns <- makeGRangesFromDataFrame(ensembl_introns, keep.extra.columns = T) %>% GenomicRanges::reduce()
+# 
+# # Size of all introns
+# introns_size <- as.double(sum(width(introns)))
+# mcols(introns)$region <- "introns"
+# 
+# 
+# ## Alternative to finding exons size
+# # Import exxons position
+# ensembl_exons <- fread("Data/exon_positions.txt", header = F)
+# 
+# # Data formatting
+# ensembl_exons[, c("chrom", "pos") := tstrsplit(V2, ":", fixed = TRUE)]
+# ensembl_exons[, c("start", "end") := tstrsplit(pos, "-", fixed = TRUE)]
+# ensembl_exons[, c("V2", "V3", "pos") := NULL]
+# colnames(ensembl_exons)[1] <- "Transcript_ID"
+# ensembl_exons[, c("start", "end") := lapply(.SD, as.numeric), .SDcols = c("start", "end")]
+# 
+# # Keeping only standard chromosomes
+# chrom_name <- c(1:22, 'X')
+# ensembl_exons <- ensembl_exons[chrom %in% chrom_name,]
+# ensembl_exons <- ensembl_exons[ensembl_exons[, do.call(order, .SD), .SDcols = c("chrom", "start")]]
+# ensembl_exons <- ensembl_exons[str_order(chrom, numeric = T)]
+# 
+# # Making the exons Granges
+# exons <- makeGRangesFromDataFrame(ensembl_exons, keep.extra.columns = T) %>% GenomicRanges::reduce()
+# 
+# # Size of all introns
+# exons_size <- as.double(sum(width(exons)))
+# mcols(exon)$region <- "introns"
+# 

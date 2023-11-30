@@ -13,117 +13,174 @@ library(ggsci)
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 
 # Clinicopathological data - keeping only adenocarcinomas
-clin_data <- as.data.table(read.xlsx("Data/NCI_NeverSmoker_n92_20210812_TMB_drivers.xlsx", sheetIndex = 1))
-clin_data <- clin_data[histology == 3, ]
-Patients_list <- gsub("NSLC-", "",sort(clin_data[, Patient_ID]))
+clin_data <- as.data.table(read.xlsx("Data/n82_NSLC_surv_data.xlsx", sheetIndex = 1))
 
 # Fetching and merging all patients variants
-VEP_data_all_patients <- rbindlist(lapply(Patients_list, function(x) fread(glue("Data/VEP_82_NSLC_TMB/VEP_NSLC-{x}.csv"))), use.names = TRUE)
-
-# TMB data for whole genome and specific regions
-TMB <- as.data.table(read.xlsx("Data/VEP_82_NSLC_TMB.xlsx", sheetIndex = 1))
-
-# Merged dataset for survival models
-surv.dt <- merge.data.table(clin_data, TMB, by = "Patient_ID")
-surv.dt <- surv.dt %>% mutate(TMB_high_low_old = case_when(complete_WGS_TMB >= 1.70 ~ "High",
-                                                           complete_WGS_TMB < 1.70 ~ "Low"),
-                              pathological_stage_refactor = case_when(pathological_stage %in% c("1A1","1A2","1A3","1B") ~ "I",
-                                                                      pathological_stage %in% c("2A", "2B") ~ "II",
-                                                                      pathological_stage %in% c("3A", "3B", "4A") ~ "III & IV"),
-                              recurrence.two = case_when(time_RpFS >= 730 ~ ">=2",
-                                                         time_RpFS < 730 ~ "<2"),
-                              recurrence.five = case_when(time_RpFS >= 1825 ~ ">=5",
-                                                          time_RpFS < 1825 ~ "<5"),
-                              os.two = case_when(time_os >= 730 ~ ">=2",
-                                                 time_os < 730 ~ "<2"),
-                              os.five = case_when(time_os >= 1825 ~ ">=5",
-                                                  time_os < 1825 ~ "<5"))
-# Changing comorbidities NA to None
-surv.dt[, comorbidities:=replace_na(comorbidities, "None")]
+VEP_data_all_patients <- fread("Data/n82_NSLC_variants_data.csv", keepLeadingZeros = TRUE)
 
 ################################################################################
 ############################# Distribution plot ################################
 ################################################################################
 
-ggplot(surv.dt, aes(x=TMB_per_region.genome_TMB)) +
+ggplot(clin_data, aes(x=TMB_per_region_genome_TMB)) +
   geom_density() +
   geom_vline(xintercept = 1.7)
+
+table(clin_data[, .(TMB_high_low, TP53)])
 
 ################################################################################
 ############################# Correlation matrix ###############################
 ################################################################################
 
+# Reference: https://towardsdatascience.com/how-to-know-which-statistical-test-to-use-for-hypothesis-testing-744c91685a5d#:~:text=T%2Dtest%3A,difference%20between%20the%20two%20variables.
+
 # Creating new data table where non-numerical variables are made binary
-surv.dt.split <- surv.dt %>% mutate(comorbidities.Hypertension = case_when(comorbidities=="Hypertension" ~ 1,
-                                                                           comorbidities!="Hypertension" ~ 0),
-                                    comorbidities.None = case_when(comorbidities=="None" ~ 1,
-                                                                   comorbidities!="None" ~ 0),
-                                    comorbidities.Diabetes = case_when(comorbidities=="Diabetes" ~ 1,
-                                                                       comorbidities!="Diabetes" ~ 0),
-                                    comorbidities.Asthma = case_when(comorbidities=="Asthma" ~ 1,
-                                                                     comorbidities!="Asthma" ~ 0),
-                                    comorbidities.Emphysema = case_when(comorbidities=="Emphysema" ~ 1,
-                                                                        comorbidities!="Emphysema" ~ 0),
-                                    pathological_stage_refactor.I = case_when(pathological_stage_refactor=="I" ~ 1,
-                                                                              pathological_stage_refactor!="I" ~ 0),
-                                    pathological_stage_refactor.II = case_when(pathological_stage_refactor=="II" ~ 1,
-                                                                               pathological_stage_refactor!="II" ~ 0),
-                                    pathological_stage_refactor.III.IV = case_when(pathological_stage_refactor=="III & IV" ~ 1,
-                                                                                   pathological_stage_refactor!="III & IV" ~ 0),
-                                    Surgery_type.Lobectomy = case_when(Surgery_type=="Lobectomy" ~ 1,
-                                                                       Surgery_type!="Lobectomy" ~ 0),
-                                    Surgery_type.Pneumonectomy = case_when(Surgery_type=="Pneumonectomy" ~ 1,
-                                                                           Surgery_type!="Pneumonectomy" ~ 0),
-                                    Surgery_type.Bilobectomy = case_when(Surgery_type=="Bilobectomy" ~ 1,
-                                                                         Surgery_type!="Bilobectomy" ~ 0),
-                                    Surgery_type.Wedge_resection = case_when(Surgery_type=="Wedge resection" ~ 1,
-                                                                             Surgery_type!="Wedge resection" ~ 0),
-                                    Surgery_type.Segmentectomy = case_when(Surgery_type=="Segmentectomy" ~ 1,
-                                                                           Surgery_type!="Segmentectomy" ~ 0),
-                                    TMB.High = case_when(TMB_high_low_old=="High" ~ 1,
-                                                         TMB_high_low_old!="High" ~ 0),
-                                    TMB.Low = case_when(TMB_high_low_old=="Low" ~ 1,
-                                                        TMB_high_low_old!="Low" ~ 0),
-                                    recurrence.two.above = case_when(recurrence.two == ">=2" ~ 1,
-                                                                     recurrence.two != ">=2" ~ 0),
-                                    recurrence.two.below = case_when(recurrence.two == "<2" ~ 1,
-                                                                     recurrence.two != "<2" ~ 0),
-                                    recurrence.five.above = case_when(recurrence.five == ">=5" ~ 1,
-                                                                      recurrence.five != ">=5" ~ 0),
-                                    recurrence.five.below = case_when(recurrence.five == "<5" ~ 1,
-                                                                      recurrence.five != "<5" ~ 0))
+clin_data.split <- clin_data %>% mutate(comorbidities.Hypertension = case_when(comorbidities=="Hypertension" ~ 1,
+                                                                               comorbidities!="Hypertension" ~ 0),
+                                        comorbidities.None = case_when(comorbidities=="None" ~ 1,
+                                                                       comorbidities!="None" ~ 0),
+                                        comorbidities.Diabetes = case_when(comorbidities=="Diabetes" ~ 1,
+                                                                           comorbidities!="Diabetes" ~ 0),
+                                        comorbidities.Asthma = case_when(comorbidities=="Asthma" ~ 1,
+                                                                         comorbidities!="Asthma" ~ 0),
+                                        comorbidities.Emphysema = case_when(comorbidities=="Emphysema" ~ 1,
+                                                                            comorbidities!="Emphysema" ~ 0),
+                                        pathological_stage_refactor.I = case_when(pathological_stage_refactor=="I" ~ 1,
+                                                                                  pathological_stage_refactor!="I" ~ 0),
+                                        pathological_stage_refactor.II = case_when(pathological_stage_refactor=="II" ~ 1,
+                                                                                   pathological_stage_refactor!="II" ~ 0),
+                                        pathological_stage_refactor.III.IV = case_when(pathological_stage_refactor=="III & IV" ~ 1,
+                                                                                       pathological_stage_refactor!="III & IV" ~ 0),
+                                        Surgery_type.Lobectomy = case_when(Surgery_type=="Lobectomy" ~ 1,
+                                                                           Surgery_type!="Lobectomy" ~ 0),
+                                        Surgery_type.Pneumonectomy = case_when(Surgery_type=="Pneumonectomy" ~ 1,
+                                                                               Surgery_type!="Pneumonectomy" ~ 0),
+                                        Surgery_type.Bilobectomy = case_when(Surgery_type=="Bilobectomy" ~ 1,
+                                                                             Surgery_type!="Bilobectomy" ~ 0),
+                                        Surgery_type.Wedge_resection = case_when(Surgery_type=="Wedge resection" ~ 1,
+                                                                                 Surgery_type!="Wedge resection" ~ 0),
+                                        Surgery_type.Segmentectomy = case_when(Surgery_type=="Segmentectomy" ~ 1,
+                                                                               Surgery_type!="Segmentectomy" ~ 0))
+# TMB_high = case_when(TMB_high_low=="High" ~ 1,
+#                      TMB_high_low!="High" ~ 0),
+# TMB_low = case_when(TMB_high_low=="Low" ~ 1,
+#                     TMB_high_low!="Low" ~ 0))
 
-surv.dt.split <- surv.dt.split[, .(time_os, VitalStatus, TMB_per_region.genome_TMB,
-                                   TMB.High, TMB.Low, sex, age, BMI,
-                                   recurrence.two.above, recurrence.two.below,
-                                   recurrence.five.above, recurrence.five.below,
-                                   passive.smoking, pathological_stage_refactor.I,
-                                   pathological_stage_refactor.II, pathological_stage_refactor.III.IV,
-                                   Surgery_type.Lobectomy, Surgery_type.Pneumonectomy, 
-                                   Surgery_type.Bilobectomy, Surgery_type.Wedge_resection,
-                                   Surgery_type.Segmentectomy, tumor_size, comorbidities.None, 
-                                   comorbidities.Hypertension, comorbidities.Diabetes, 
-                                   comorbidities.Asthma, comorbidities.Emphysema, 
-                                   EGFR, ERBB2, KRAS, BRAF, TP53, PIK3CA, MET, driver)]
+# Keep the variables to compare with TMB
+clin_data.split <- clin_data.split[, .(VitalStatus, complete_WGS_TMB,
+                                       TMB_high_low, sex, age, BMI, tumor_size,
+                                       passive_smoking, 
+                                       pathological_stage_refactor.I,
+                                       pathological_stage_refactor.II, 
+                                       pathological_stage_refactor.III.IV,
+                                       comorbidities.Hypertension, 
+                                       comorbidities.Diabetes, 
+                                       comorbidities.Asthma, 
+                                       EGFR, ERBB2, KRAS, 
+                                       TP53, PIK3CA, MET)]
 
-# Correlation excluding RpFS data, because 2 patients don't have RpFS follow-up
-cor.m <- rcorr(as.matrix(surv.dt.split),
-               type = "pearson")
-cor.m$P <- cor.m$P %>% replace(is.na(.), 0)
+# Extract the categorical variables
+changeCols <- colnames(clin_data.split[, .(VitalStatus,TMB_high_low, sex,
+                                           passive_smoking, 
+                                           pathological_stage_refactor.I,
+                                           pathological_stage_refactor.II, 
+                                           pathological_stage_refactor.III.IV,
+                                           comorbidities.Hypertension, 
+                                           comorbidities.Diabetes, 
+                                           comorbidities.Asthma, 
+                                           EGFR, ERBB2, KRAS,
+                                           TP53, PIK3CA, MET)])
 
-png("Results/Misc plots/correlation_matrix.png", width = 10, height = 10, units = "in", res = 1200)
-corrplot(cor.m$r, tl.col = "black", p.mat = cor.m$P, insig = "blank")
-dev.off()
+# Convert the categorical variables to factor
+clin_data.split[,(changeCols):= lapply(.SD, as.factor), .SDcols = changeCols]
+
+## Comparison matrix with continuous-continuous, continuous-categorical and categorical-categorical
+## with the two types of TMB: continuous and dichotomous
+# 1 - Initialize a matrix with no value for each variable pair to test.
+TMB_matrix <- matrix(nrow = 2, ncol = length(colnames(clin_data.split)) - 2)
+
+colnames(TMB_matrix) <- setdiff(colnames(clin_data.split), c("complete_WGS_TMB", "TMB_high_low"))
+rownames(TMB_matrix) <- c("complete_WGS_TMB", "TMB_high_low")
+
+# 2 - Iterate over each cell of the matrix
+for (i in rownames(TMB_matrix)) {
+  for (j in colnames(TMB_matrix)) {
+    print(c(i,j))
+    # 3 - Perform different actions based on variable pair type
+    if (is.numeric(clin_data.split[[i]]) && is.numeric(clin_data.split[[j]])) {
+      # Use Spearman
+      tryCatch(
+        TMB_matrix[i,j] <- round(cor.test(clin_data.split[[i]], clin_data.split[[j]], method = "spearman")$p.value, digits = 3), # exact p-value if there are no ties
+        warning = function(w) {TMB_matrix[i,j] <<- round(cor.test(clin_data.split[[i]], clin_data.split[[j]], method = "spearman", exact = FALSE)$p.value, digits = 3)} # approximated p-value if there are ties
+      )
+      print(glue("Spearman: {TMB_matrix[i,j]}"))
+    }
+    if (is.numeric(clin_data.split[[i]]) && is.factor(clin_data.split[[j]])) {
+      # Use t-test
+      TMB_matrix[i,j] <- round(t.test(clin_data.split[[i]] ~ clin_data.split[[j]])$p.value, digits = 3)
+      print(glue("t-test: {TMB_matrix[i,j]}"))
+    }
+    if (is.factor(clin_data.split[[i]]) && is.numeric(clin_data.split[[j]])) {
+      # Use t-test
+      TMB_matrix[i,j] <- round(t.test(clin_data.split[[j]] ~ clin_data.split[[i]])$p.value, digits = 3)
+      print(glue("t-test: {TMB_matrix[i,j]}"))
+    }
+    if (is.factor(clin_data.split[[i]]) && is.factor(clin_data.split[[j]])) {
+      # Use Chi-square
+      tryCatch(
+        TMB_matrix[i,j] <- round(chisq.test(clin_data.split[[i]], clin_data.split[[j]])$p.value, digits = 3), # chi-square if there are enough samples
+        warning = function(w) {TMB_matrix[i,j] <<- round(fisher.test(clin_data.split[[i]], clin_data.split[[j]])$p.value, digits = 3)} # Fisher if the number of samples is too small for chi-square
+      )
+      print(glue("Chi-square: {TMB_matrix[i,j]}"))
+    }
+  }
+}
+
+# Change variables labels for visualization
+colnames(TMB_matrix) <- c("Vital Status", "Sex", "Age", "BMI", "Tumor size", "Passive smoking", 
+                          "Pathological stage I", "Pathological stage II", 
+                          "Pathological stage III-IV", "Hypertension", "Diabetes", 
+                          "Asthma", "EGFR", "ERBB2", "KRAS", "TP53", "PIK3CA", "MET")
+rownames(TMB_matrix) <- c("Continuous TMB", "Dichotomous TMB")
+
+# Change variables labels for visualization (french version)
+colnames(TMB_matrix) <- c("Statut vital", "Sexe", "Âge", "IMC", "Taille tumeur", "Tabagisme passif", 
+                          "Stade pathologique I", "Stade pathologique II", 
+                          "Stade pathologique III-IV", "Hypertension", "Diabète", 
+                          "Asthme", "EGFR", "ERBB2", "KRAS", "TP53", "PIK3CA", "MET")
+rownames(TMB_matrix) <- c("TMB continu", "TMB dichotomique")
+
+TMB_matrix_melt <- as.data.table(reshape2::melt(TMB_matrix))
+
+TMB_matrix_melt[, significance:=ifelse(value<=0.05, value, NA)]
+ggplot(TMB_matrix_melt, aes(x=Var1, y=Var2)) +
+  geom_tile(aes(fill=value)) +
+  geom_text(data=TMB_matrix_melt, aes(Var1, Var2, label = value), color="black", size=rel(4)) +
+  scale_fill_gradient(high="grey90", low="#E63946", limits=c(0,0.05), na.value = "white") +
+  scale_y_discrete(expand = c(0, 0), limits=rev) +
+  scale_x_discrete(expand = c(0, 0), position = "top") +
+  xlab("") + 
+  ylab("") +
+  theme_classic() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_blank(),
+        axis.ticks = element_blank(),
+        legend.position = "none",
+        axis.title.x = element_blank(),
+        axis.text = element_text(color="black", size=12.5))
+
+ggsave(file=glue("Poster FMED/TMB_p_matrix.png"), width=5, height=6, dpi=300)
 
 ################################################################################
 ######################### Pathological stage plots #############################
 ################################################################################
 
 ## Pathological stage (merge) x TMB
-ggplot(surv.dt, aes(x=pathological_stage_refactor, y=TMB_per_region.genome_TMB, color = pathological_stage_refactor)) +
+ggplot(clin_data, aes(x=pathological_stage_refactor, y=TMB_per_region_genome_TMB, color = pathological_stage_refactor)) +
   geom_boxplot(width = 0.25, color = "black") +
   geom_point() +
-  geom_text(data=surv.dt[pathological_stage == "4A"], label = "IV", hjust=-1.5, color = "black") +
+  geom_text(data=clin_data[pathological_stage == "4A"], label = "IV", hjust=-1.5, color = "black") +
   theme_classic() +
   ylab("Whole genome TMB") +
   xlab("Pathological stage") +
@@ -132,7 +189,7 @@ ggplot(surv.dt, aes(x=pathological_stage_refactor, y=TMB_per_region.genome_TMB, 
 ggsave("Results/Misc plots/TMBxpath_stage.png", width=7, height=7, dpi=300)
 
 ## Pathological stage (all) x TMB X Age
-ggplot(surv.dt, aes(x=TMB_per_region.genome_TMB, y=age, color=pathological_stage)) +
+ggplot(clin_data, aes(x=TMB_per_region_genome_TMB, y=age, color=pathological_stage)) +
   geom_point(size=2) +
   theme_classic() +
   scale_y_continuous(breaks = seq(25, 85,by = 5), limits = c(25, 85)) + 
@@ -144,7 +201,7 @@ ggplot(surv.dt, aes(x=TMB_per_region.genome_TMB, y=age, color=pathological_stage
 ggsave("Results/Misc plots/TMB x Path stage x Age/path_stage_all.png", width=7, height=7, dpi=300)
 
 ## Pathological stage (merge) x TMB X Age
-ggplot(surv.dt, aes(x=TMB_per_region.genome_TMB, y=age, color=pathological_stage_refactor)) +
+ggplot(clin_data, aes(x=TMB_per_region_genome_TMB, y=age, color=pathological_stage_refactor)) +
   geom_point(size=2) +
   theme_classic() +
   scale_y_continuous(breaks = seq(25, 85,by = 5), limits = c(25, 85)) + 
@@ -156,7 +213,7 @@ ggsave("Results/Misc plots/TMB x Path stage x Age/path_stage_merge.png", width=7
 
 ## Pathological stage (individual) x TMB X Age
 # Path stage I
-ggplot(surv.dt[pathological_stage_refactor == "I"], aes(x=TMB_per_region.genome_TMB, y=age)) +
+ggplot(clin_data[pathological_stage_refactor == "I"], aes(x=TMB_per_region_genome_TMB, y=age)) +
   geom_point(size=2, color = "#F8766D") +
   theme_classic() +
   scale_y_continuous(breaks = seq(25, 85,by = 5), limits = c(25, 85)) + 
@@ -167,7 +224,7 @@ ggplot(surv.dt[pathological_stage_refactor == "I"], aes(x=TMB_per_region.genome_
 ggsave("Results/Misc plots/TMB x Path stage x Age/path_stage_I.png", width=7, height=7, dpi=300)
 
 # Path stage II
-ggplot(surv.dt[pathological_stage_refactor == "II"], aes(x=TMB_per_region.genome_TMB, y=age, color = pathological_stage_refactor)) +
+ggplot(clin_data[pathological_stage_refactor == "II"], aes(x=TMB_per_region_genome_TMB, y=age, color = pathological_stage_refactor)) +
   geom_point(size=2, color = "#00BA38") +
   theme_classic() +
   scale_y_continuous(breaks = seq(25, 85,by = 5), limits = c(25, 85)) + 
@@ -178,7 +235,7 @@ ggplot(surv.dt[pathological_stage_refactor == "II"], aes(x=TMB_per_region.genome
 ggsave("Results/Misc plots/TMB x Path stage x Age/path_stage_II.png", width=7, height=7, dpi=300)
 
 # Path stage III & IV
-ggplot(surv.dt[pathological_stage_refactor == "III & IV"], aes(x=TMB_per_region.genome_TMB, y=age, color = pathological_stage_refactor)) +
+ggplot(clin_data[pathological_stage_refactor == "III & IV"], aes(x=TMB_per_region_genome_TMB, y=age, color = pathological_stage_refactor)) +
   geom_point(size=2, color = "#619CFF") +
   theme_classic() +
   scale_y_continuous(breaks = seq(25, 85,by = 5), limits = c(25, 85)) + 
@@ -189,7 +246,7 @@ ggplot(surv.dt[pathological_stage_refactor == "III & IV"], aes(x=TMB_per_region.
 ggsave("Results/Misc plots/TMB x Path stage x Age/path_stage_III_IV.png", width=7, height=7, dpi=300)
 
 # All path stage and passive smoking status
-ggplot(data=surv.dt, aes(x=factor(passive.smoking), y=complete_WGS_TMB, color = pathological_stage_refactor)) + 
+ggplot(data=clin_data, aes(x=factor(passive_smoking), y=complete_WGS_TMB, color = pathological_stage_refactor)) + 
   geom_point() +
   scale_x_discrete(breaks = c(0,1)) +
   theme_classic() +
@@ -342,17 +399,17 @@ ggsave(frequency.all.gp, file=glue("Results/frequency plots/all_sw_frequency.png
 
 
 ################################################################################
-################################ RpFS graphs ###################################
+################################ PFS graphs ####################################
 ################################################################################
 
-# Correlation between WGS TMB and RFS
-ggplot(na.omit(surv.dt, cols = "time_RpFS"), 
-       aes(y = complete_WGS_TMB, x = time_RpFS, color = factor(RpFS_indicator))) +
+# Correlation between WGS TMB and PFS
+ggplot(na.omit(clin_data, cols = "PFS_time"), 
+       aes(y = complete_WGS_TMB, x = PFS_time, color = factor(PFS_indicator))) +
   geom_point(size=2) +
   theme_classic() +
   ylab("Whole-genome TMB") +
-  xlab("Relapse-free survival") +
-  scale_color_discrete(name = "Relapse") +
+  xlab("Progression-free survival") +
+  scale_color_discrete(name = "Progression") +
   geom_vline(xintercept = 730, lty = "dashed") +
   geom_vline(xintercept = 1825, lty = "dashed") +
   annotate("text", x=730, y = 10, label = "2 years", hjust = -0.1) + 
@@ -360,14 +417,14 @@ ggplot(na.omit(surv.dt, cols = "time_RpFS"),
 
 ggsave(file=glue("Results/RFS plots/RFS_WGS_correlation.png"), width=7, height=7, dpi=300)
 
-# Correlation between WES TMB and RFS
-ggplot(na.omit(surv.dt, cols = "time_RpFS"), 
-       aes(y = complete_WES_TMB, x = time_RpFS, color = factor(RpFS_indicator))) +
+# Correlation between WES TMB and PFS
+ggplot(na.omit(clin_data, cols = "PFS_time"), 
+       aes(y = complete_WES_TMB, x = PFS_time, color = factor(PFS_indicator))) +
   geom_point(size=2) +
   theme_classic() +
   ylab("Whole-exome TMB") +
-  xlab("Relapse-free survival") +
-  scale_color_discrete(name = "Relapse") +
+  xlab("Progression-free survival") +
+  scale_color_discrete(name = "Progression") +
   geom_vline(xintercept = 730, lty = "dashed") +
   geom_vline(xintercept = 1825, lty = "dashed") +
   annotate("text", x=730, y = 10, label = "2 years", hjust = -0.1) + 
@@ -375,34 +432,34 @@ ggplot(na.omit(surv.dt, cols = "time_RpFS"),
 
 ggsave(file=glue("Results/RFS plots/RFS_WES_correlation.png"), width=7, height=7, dpi=300)
 
-## 2 years RFS with path stage annotation
-ggplot(na.omit(surv.dt, cols="recurrence.two"), aes(x=complete_WGS_TMB)) +
+## 2 years PFS with path stage annotation
+ggplot(na.omit(clin_data, cols="PFS_time"), aes(x=complete_WGS_TMB)) +
   geom_density() +
   lims(x = c(0,10), y=c(0,0.6)) +
-  facet_grid(~recurrence.two)
-shapiro.test(surv.dt[recurrence.two == "<2", complete_WGS_TMB])
-shapiro.test(surv.dt[recurrence.two == ">=2", complete_WGS_TMB])
+  facet_grid(~pfs_two)
+shapiro.test(clin_data[pfs_two== "<2", complete_WGS_TMB])
+shapiro.test(clin_data[pfs_two == ">=2", complete_WGS_TMB])
 
-ggplot(na.omit(surv.dt, cols="recurrence.two"), aes(x=complete_WES_TMB)) +
+ggplot(na.omit(clin_data, cols="PFS_time"), aes(x=complete_WES_TMB)) +
   geom_density() +
   lims(x = c(0,8), y =c(0, 0.7)) +
-  facet_grid(~recurrence.two)
-shapiro.test(surv.dt[recurrence.two == "<2", complete_WES_TMB])
-shapiro.test(surv.dt[recurrence.two == ">=2", complete_WES_TMB])
+  facet_grid(~pfs_two)
+shapiro.test(clin_data[pfs_two == "<2", complete_WES_TMB])
+shapiro.test(clin_data[pfs_two == ">=2", complete_WES_TMB])
 
-# 2 years RFS x continuous WGS TMB and path stage
-WGS.two.WRS <- wilcox.test(complete_WGS_TMB ~ recurrence.two, data = surv.dt, # Comparing the distribution between the two RFS survival subgroups
+# 2 years PFS x continuous WGS TMB and path stage
+WGS.two.WRS <- wilcox.test(complete_WGS_TMB ~ pfs_two, data = clin_data, # Comparing the distribution between the two RFS survival subgroups
                            na.rm = TRUE, paired = FALSE, exact = FALSE, conf.int = TRUE)
 WGS.two.WRS.p <- round(WGS.two.WRS$p.value, digits = 3)
 
-ggplot(na.omit(surv.dt, cols="recurrence.two"), aes(x=recurrence.two, y=complete_WGS_TMB)) +
+ggplot(na.omit(clin_data, cols="pfs_two"), aes(x=pfs_two, y=complete_WGS_TMB)) +
   geom_boxplot(width=0.5, outlier.colour = "white") +
   geom_jitter(aes(color = pathological_stage_refactor), 
               size = 2, width = 0.15) +
   geom_hline(yintercept = 1.7, color = "red") +
   geom_vline(xintercept = 1.5, lty = "dashed") +
   theme_classic() +
-  xlab("Relapse free survival") +
+  xlab("Progression-free survival") +
   ylab("Whole-genome TMB") + 
   scale_x_discrete(labels = c("<2" = "<2 years\nn=20",
                               ">=2" = "\u22652 years\nn=60")) +
@@ -411,11 +468,11 @@ ggplot(na.omit(surv.dt, cols="recurrence.two"), aes(x=recurrence.two, y=complete
   scale_color_discrete(name = "Pathological stage") +
   theme(axis.text.y = element_text(color = c(rep("black", 11), "red")),
         axis.ticks.y = element_line(color = c(rep("black", 11), "red"))) +
-  annotate("text", x=0.5, y = 1.55, label = "n=8", hjust = "left") +
-  annotate("text", x=0.5, y = 1.90, label = "n=12", hjust = "left") +
-  annotate("text", x=2.4, y = 1.55, label = "n=42", hjust = "left") +
-  annotate("text", x=2.4, y = 1.90, label = "n=18", hjust = "left") +
-  annotate("text", x=0, y = 10, label = glue("Wilcoxon Rank Sum p={WGS.two.WRS.p}"), hjust = -0.05) +
+  # annotate("text", x=0.5, y = 1.55, label = "n=8", hjust = "left") +
+  # annotate("text", x=0.5, y = 1.90, label = "n=12", hjust = "left") +
+  # annotate("text", x=2.4, y = 1.55, label = "n=42", hjust = "left") +
+  # annotate("text", x=2.4, y = 1.90, label = "n=18", hjust = "left") +
+  # annotate("text", x=0, y = 10, label = glue("Mann-Whitney p={WGS.two.WRS.p}"), hjust = -0.05) +
   coord_cartesian(clip = "off")
 
 ggsave(file=glue("Results/RFS plots/RFS_WGS_2years_path.png"), width=7, height=7, dpi=300)
@@ -425,14 +482,14 @@ WES.two.WRS <- wilcox.test(complete_WES_TMB ~ recurrence.two, data = surv.dt, # 
                            na.rm = TRUE, paired = FALSE, exact = FALSE, conf.int = TRUE)
 WES.two.WRS.p <- round(WES.two.WRS$p.value, digits = 3)
 
-ggplot(na.omit(surv.dt, cols="recurrence.two"), aes(x=recurrence.two, y=complete_WES_TMB)) +
+ggplot(na.omit(clin_data, cols="pfs_two"), aes(x=pfs_two, y=complete_WES_TMB)) +
   geom_boxplot(width=0.5, outlier.colour = "white") +
   geom_jitter(aes(color = pathological_stage_refactor), 
               size = 2, width = 0.15) +
   geom_hline(yintercept = 1.2, color = "red") +
   geom_vline(xintercept = 1.5, lty = "dashed") +
   theme_classic() +
-  xlab("Relapse free survival") +
+  xlab("Progression-free survival") +
   ylab("Whole-exome TMB") +
   scale_x_discrete(labels = c("<2" = "<2 years\nn=20",
                               ">=2" = "\u22652 years\nn=60")) +
@@ -441,11 +498,11 @@ ggplot(na.omit(surv.dt, cols="recurrence.two"), aes(x=recurrence.two, y=complete
   scale_color_discrete(name = "Pathological stage") +
   theme(axis.text.y = element_text(color = c(rep("black", 9), "red")),
         axis.ticks.y = element_line(color = c(rep("black", 9), "red"))) +
-  annotate("text", x=0.5, y = 1.05, label = "n=9", hjust = "left") +
-  annotate("text", x=0.5, y = 1.40, label = "n=11", hjust = "left") +
-  annotate("text", x=2.4, y = 1.05, label = "n=41", hjust = "left") +
-  annotate("text", x=2.4, y = 1.40, label = "n=19", hjust = "left") +
-  annotate("text", x=0, y = 8, label = glue("Wilcoxon Rank Sum p={WES.two.WRS.p}"), hjust = -0.05) +
+  # annotate("text", x=0.5, y = 1.05, label = "n=9", hjust = "left") +
+  # annotate("text", x=0.5, y = 1.40, label = "n=11", hjust = "left") +
+  # annotate("text", x=2.4, y = 1.05, label = "n=41", hjust = "left") +
+  # annotate("text", x=2.4, y = 1.40, label = "n=19", hjust = "left") +
+  # annotate("text", x=0, y = 8, label = glue("Mann-Whitney p={WES.two.WRS.p}"), hjust = -0.05) +
   coord_cartesian(clip = "off")
 
 ggsave(file=glue("Results/RFS plots/RFS_WES_2years_path.png"), width=7, height=7, dpi=300)
@@ -490,7 +547,7 @@ ggplot(na.omit(surv.dt, cols="recurrence.five"), aes(x=recurrence.five, y=comple
   annotate("text", x=0.5, y = 1.90, label = "n=20", hjust = "left") +
   annotate("text", x=2.4, y = 1.55, label = "n=22", hjust = "left") +
   annotate("text", x=2.4, y = 1.90, label = "n=10", hjust = "left") +
-  annotate("text", x=0, y = 10, label = glue("Wilcoxon Rank Sum p={WGS.five.WRS.p}"), hjust = -0.05) +
+  annotate("text", x=0, y = 10, label = glue("Mann-Whitney p={WGS.five.WRS.p}"), hjust = -0.05) +
   coord_cartesian(clip = "off")
 
 ggsave(file=glue("Results/RFS plots/RFS_WGS_5years_path.png"), width=7, height=7, dpi=300)
@@ -520,42 +577,44 @@ ggplot(na.omit(surv.dt, cols="recurrence.five"), aes(x=recurrence.five, y=comple
   annotate("text", x=0.5, y = 1.40, label = "n=20", hjust = "left") +
   annotate("text", x=2.4, y = 1.05, label = "n=22", hjust = "left") +
   annotate("text", x=2.4, y = 1.40, label = "n=10", hjust = "left") +
-  annotate("text", x=0, y = 8, label = glue("Wilcoxon Rank Sum p={WES.five.WRS.p}"), hjust = -0.05) +
+  annotate("text", x=0, y = 8, label = glue("Mann-Whitney p={WES.five.WRS.p}"), hjust = -0.05) +
   coord_cartesian(clip = "off")
 
 ggsave(file=glue("Results/RFS plots/RFS_WES_5years_path.png"), width=7, height=7, dpi=300)
 
-## 2 years RFS with relapse annotation
-# 2 years RFS x continuous WGS TMB and event
+## 2 years RFS or PFS with relapse annotation
+# 2 years PFS x continuous WGS TMB and event
 WGS.two.WRS.event <- wilcox.test(complete_WGS_TMB ~ recurrence.two, data = surv.dt[RpFS_indicator == 1],
-                                 na.rm = TRUE, paired = FALSE, exact = TRUE, conf.int = TRUE) # Comparing the event (replase or not) distribution between the two RFS survival subgroups
+                                 na.rm = TRUE, paired = FALSE, exact = TRUE, conf.int = TRUE) # Comparing the event (relapse or not) distribution between the two RFS survival subgroups
 WGS.two.WRS.event.p <- round(WGS.two.WRS.event$p.value, digits = 3)
 
-ggplot(na.omit(surv.dt, cols="recurrence.two"), aes(x=recurrence.two, y=complete_WGS_TMB)) +
-  geom_boxplot(width=0.5, outlier.colour = "white") +
-  geom_jitter(aes(color = factor(RpFS_indicator)), 
+# Remove patients under 2 years with no event. They are censored because of lack of PFS follow-up.
+ggplot(clin_data[!(PFS_indicator == 0 & pfs_two == "<2")], aes(x=pfs_two, y=complete_WGS_TMB)) +
+  geom_boxplot(data = clin_data[PFS_indicator == 1 & pfs_two == "<2"], width=0.5, outlier.colour = "white") +
+  geom_boxplot(data = clin_data[pfs_two == ">=2"], width=0.5, outlier.colour = "white") +
+  geom_jitter(aes(color = pathological_stage_refactor),
               size = 2, width = 0.15) +
   geom_hline(yintercept = 1.7, color = "red") +
   geom_vline(xintercept = 1.5, lty = "dashed") +
   theme_classic() +
-  xlab("Relapse free survival") +
-  ylab("Whole-genome TMB") + 
-  scale_x_discrete(labels = c("<2" = "<2 years\nn=20",
-                              ">=2" = "\u22652 years\nn=60")) +
+  xlab("Time to event") +
+  ylab("Whole-genome TMB (mut/Mb)") + 
+  scale_x_discrete(labels = c("<2" = "<2 years\nn=10",
+                              ">=2" = "\u22652 years\nn=63")) +
   scale_y_continuous(breaks = c(seq(0,10,1), 1.7),
                      limits = c(0,10), expand = c(0,0)) +
-  scale_color_discrete(name = "Relapse") +
+  scale_color_manual(name = "Pathological stage", values = c("#1D3557", "#EC9A9A", "#E63946")) +
   theme(axis.text.y = element_text(color = c(rep("black", 11), "red")),
         axis.ticks.y = element_line(color = c(rep("black", 11), "red"))) +
-  annotate("text", x=0.5, y = 1.55, label = "n=8", hjust = "left") +
-  annotate("text", x=0.5, y = 1.90, label = "n=12", hjust = "left") +
-  annotate("text", x=2.4, y = 1.55, label = "n=42", hjust = "left") +
-  annotate("text", x=2.4, y = 1.90, label = "n=18", hjust = "left") +
-  annotate("text", x=0, y = 10, label = glue("Wilcoxon Rank Sum p={WGS.two.WRS.p}"), hjust = -0.05) +
-  annotate("text", x=0, y = 9.5, label = glue("Event Wilcoxon Rank Sum p={WGS.two.WRS.event.p}"), colour = "#00b0c4", hjust = -0.05) +
+  # annotate("text", x=0.5, y = 1.55, label = "n=8", hjust = "left") +
+  # annotate("text", x=0.5, y = 1.90, label = "n=12", hjust = "left") +
+  # annotate("text", x=2.4, y = 1.55, label = "n=42", hjust = "left") +
+  # annotate("text", x=2.4, y = 1.90, label = "n=18", hjust = "left") +
+  # annotate("text", x=0, y = 10, label = glue("Mann-Whitney p={WGS.two.WRS.p}"), hjust = -0.05) +
+  # annotate("text", x=0, y = 9.5, label = glue("Event Mann-Whitney p={WGS.two.WRS.event.p}"), colour = "#00b0c4", hjust = -0.05) +
   coord_cartesian(clip = "off")
 
-ggsave(file=glue("Results/RFS plots/RFS_WGS_2years_event.png"), width=7, height=7, dpi=300)
+ggsave(file=glue("Results/PFS plots/PFS_WGS_2years_event.png"), width=7, height=7, dpi=300)
 
 # 2 years RFS x continuous WES TMB and event
 WES.two.WRS.event <- wilcox.test(complete_WES_TMB ~ recurrence.two, data = surv.dt[RpFS_indicator == 1],
@@ -582,8 +641,8 @@ ggplot(na.omit(surv.dt, cols="recurrence.two"), aes(x=recurrence.two, y=complete
   annotate("text", x=0.5, y = 1.40, label = "n=11", hjust = "left") +
   annotate("text", x=2.4, y = 1.05, label = "n=41", hjust = "left") +
   annotate("text", x=2.4, y = 1.40, label = "n=19", hjust = "left") +
-  annotate("text", x=0, y = 8, label = glue("Wilcoxon Rank Sum p={WES.two.WRS.p}"), hjust = -0.05) +
-  annotate("text", x=0, y = 7.6, label = glue("Event Wilcoxon Rank Sum p={WES.two.WRS.event.p}"), colour = "#00b0c4", hjust = -0.05) +
+  annotate("text", x=0, y = 8, label = glue("Mann-Whitney p={WES.two.WRS.p}"), hjust = -0.05) +
+  annotate("text", x=0, y = 7.6, label = glue("Event Mann-Whitney p={WES.two.WRS.event.p}"), colour = "#00b0c4", hjust = -0.05) +
   coord_cartesian(clip = "off")
 
 ggsave(file=glue("Results/RFS plots/RFS_WES_2years_event.png"), width=7, height=7, dpi=300)
@@ -614,8 +673,8 @@ ggplot(na.omit(surv.dt, cols="recurrence.five"), aes(x=recurrence.five, y=comple
   annotate("text", x=0.5, y = 1.90, label = "n=20", hjust = "left") +
   annotate("text", x=2.4, y = 1.55, label = "n=22", hjust = "left") +
   annotate("text", x=2.4, y = 1.90, label = "n=10", hjust = "left") +
-  annotate("text", x=0, y = 10, label = glue("Wilcoxon Rank Sum p={WGS.five.WRS.p}"), hjust = -0.05) +
-  #annotate("text", x=0, y = 9.5, label = glue("Event Wilcoxon Rank Sum p={WGS.five.WRS.event.p}"), colour = "#00b0c4", hjust = -0.05) +
+  annotate("text", x=0, y = 10, label = glue("Mann-Whitney p={WGS.five.WRS.p}"), hjust = -0.05) +
+  #annotate("text", x=0, y = 9.5, label = glue("Event Mann-Whitney p={WGS.five.WRS.event.p}"), colour = "#00b0c4", hjust = -0.05) +
   coord_cartesian(clip = "off")
 
 ggsave(file=glue("Results/RFS plots/RFS_WGS_5years_event.png"), width=7, height=7, dpi=300)
@@ -645,12 +704,40 @@ ggplot(na.omit(surv.dt, cols="recurrence.five"), aes(x=recurrence.five, y=comple
   annotate("text", x=0.5, y = 1.40, label = "n=20", hjust = "left") +
   annotate("text", x=2.4, y = 1.05, label = "n=22", hjust = "left") +
   annotate("text", x=2.4, y = 1.40, label = "n=10", hjust = "left") +
-  annotate("text", x=0, y = 8, label = glue("Wilcoxon Rank Sum p={WES.five.WRS.p}"), hjust = -0.05) +
-  #annotate("text", x=0, y = 7.6, label = glue("Event Wilcoxon Rank Sum p={WES.five.WRS.event.p}"), colour = "#00b0c4", hjust = -0.05) +
+  annotate("text", x=0, y = 8, label = glue("Mann-Whitney p={WES.five.WRS.p}"), hjust = -0.05) +
+  #annotate("text", x=0, y = 7.6, label = glue("Event Mann-Whitney p={WES.five.WRS.event.p}"), colour = "#00b0c4", hjust = -0.05) +
   coord_cartesian(clip = "off")
 
 ggsave(file=glue("Results/RFS plots/RFS_WES_5years_event.png"), width=7, height=7, dpi=300)
 
+# 5 years PFS x continuous WGS TMB and event
+# Remove patients under 5 years with no event. They are censored because of lack of PFS follow-up.
+ggplot(clin_data[!(PFS_indicator == 0 & pfs_five == "<5")], aes(x=pfs_five, y=complete_WGS_TMB)) +
+  geom_boxplot(data = clin_data[PFS_indicator == 1 & pfs_five == "<5"], width=0.5, outlier.colour = "white") +
+  geom_boxplot(data = clin_data[pfs_five == ">=5"], width=0.5, outlier.colour = "white") +
+  geom_jitter(aes(color = pathological_stage_refactor),
+              size = 2, width = 0.15) +
+  geom_hline(yintercept = 1.7, color = "red") +
+  geom_vline(xintercept = 1.5, lty = "dashed") +
+  theme_classic() +
+  xlab("Time to event") +
+  ylab("Whole-genome TMB (mut/Mb)") + 
+  scale_x_discrete(labels = c("<5" = "<5 years\nn=22",
+                              ">=5" = "\u22655 years\nn=29")) +
+  scale_y_continuous(breaks = c(seq(0,10,1), 1.7),
+                     limits = c(0,10), expand = c(0,0)) +
+  scale_color_manual(name = "Pathological stage", values = c("#1D3557", "#EC9A9A", "#E63946")) +
+theme(axis.text.y = element_text(color = c(rep("black", 11), "red")),
+      axis.ticks.y = element_line(color = c(rep("black", 11), "red"))) +
+  # annotate("text", x=0.5, y = 1.55, label = "n=8", hjust = "left") +
+  # annotate("text", x=0.5, y = 1.90, label = "n=12", hjust = "left") +
+  # annotate("text", x=2.4, y = 1.55, label = "n=42", hjust = "left") +
+  # annotate("text", x=2.4, y = 1.90, label = "n=18", hjust = "left") +
+  # annotate("text", x=0, y = 10, label = glue("Mann-Whitney p={WGS.two.WRS.p}"), hjust = -0.05) +
+  # annotate("text", x=0, y = 9.5, label = glue("Event Mann-Whitney p={WGS.two.WRS.event.p}"), colour = "#00b0c4", hjust = -0.05) +
+  coord_cartesian(clip = "off")
+
+ggsave(file=glue("Results/PFS plots/PFS_WGS_5years_event.png"), width=7, height=7, dpi=300)
 
 ################################################################################
 ################################# OS graphs ####################################
@@ -673,7 +760,7 @@ shapiro.test(surv.dt[os.five == ">=5", complete_WES_TMB])
 
 # 5 years OS x continuous WGS TMB and path stage
 WGS.os.five.WRS <- wilcox.test(complete_WGS_TMB ~ os.five, data = surv.dt, # Comparing the distribution between the two OS survival subgroups
-                            na.rm = TRUE, paired = FALSE, exact = FALSE, conf.int = TRUE)
+                               na.rm = TRUE, paired = FALSE, exact = FALSE, conf.int = TRUE)
 WGS.os.five.WRS.p <- round(WGS.os.five.WRS$p.value, digits = 3)
 
 ggplot(na.omit(surv.dt, cols="os.five"), aes(x=os.five, y=complete_WGS_TMB)) +
@@ -696,14 +783,14 @@ ggplot(na.omit(surv.dt, cols="os.five"), aes(x=os.five, y=complete_WGS_TMB)) +
   annotate("text", x=0.5, y = 1.90, label = "n=15", hjust = "left") +
   annotate("text", x=2.4, y = 1.55, label = "n=32", hjust = "left") +
   annotate("text", x=2.4, y = 1.90, label = "n=17", hjust = "left") +
-  annotate("text", x=0, y = 10, label = glue("Wilcoxon Rank Sum p={WGS.os.five.WRS.p}"), hjust = -0.05) +
+  annotate("text", x=0, y = 10, label = glue("Mann-Whitney p={WGS.os.five.WRS.p}"), hjust = -0.05) +
   coord_cartesian(clip = "off")
 
 ggsave(file=glue("Results/OS plots/OS_WGS_5years_path.png"), width=7, height=7, dpi=300)
 
 # 5 years OS x continuous WES TMB and path stage
 WES.os.five.WRS <- wilcox.test(complete_WES_TMB ~ os.five, data = surv.dt, # Comparing the distribution between the two OS survival subgroups
-                            na.rm = TRUE, paired = FALSE, exact = FALSE, conf.int = TRUE)
+                               na.rm = TRUE, paired = FALSE, exact = FALSE, conf.int = TRUE)
 WES.os.five.WRS.p <- round(WES.os.five.WRS$p.value, digits = 3)
 
 ggplot(na.omit(surv.dt, cols="os.five"), aes(x=os.five, y=complete_WES_TMB)) +
@@ -726,7 +813,7 @@ ggplot(na.omit(surv.dt, cols="os.five"), aes(x=os.five, y=complete_WES_TMB)) +
   annotate("text", x=0.5, y = 1.40, label = "n=15", hjust = "left") +
   annotate("text", x=2.4, y = 1.05, label = "n=32", hjust = "left") +
   annotate("text", x=2.4, y = 1.40, label = "n=17", hjust = "left") +
-  annotate("text", x=0, y = 8, label = glue("Wilcoxon Rank Sum p={WES.os.five.WRS.p}"), hjust = -0.05) +
+  annotate("text", x=0, y = 8, label = glue("Mann-Whitney p={WES.os.five.WRS.p}"), hjust = -0.05) +
   coord_cartesian(clip = "off")
 
 ggsave(file=glue("Results/OS plots/OS_WES_5years_path.png"), width=7, height=7, dpi=300)
@@ -734,7 +821,7 @@ ggsave(file=glue("Results/OS plots/OS_WES_5years_path.png"), width=7, height=7, 
 ## 5 years OS with path stage annotation
 # 5 years OS x continuous WGS TMB and event
 WGS.os.five.WRS.event <- wilcox.test(complete_WGS_TMB ~ os.five, data = surv.dt[RpFS_indicator == 1],
-                                  na.rm = TRUE, paired = FALSE, exact = TRUE, conf.int = TRUE) # Comparing the event (relapse or not) distribution between the two OS survival subgroups
+                                     na.rm = TRUE, paired = FALSE, exact = TRUE, conf.int = TRUE) # Comparing the event (relapse or not) distribution between the two OS survival subgroups
 WGS.os.five.WRS.event.p <- round(WGS.os.five.WRS.event$p.value, digits = 3)
 
 ggplot(na.omit(surv.dt, cols="os.five"), aes(x=os.five, y=complete_WGS_TMB)) +
@@ -757,15 +844,15 @@ ggplot(na.omit(surv.dt, cols="os.five"), aes(x=os.five, y=complete_WGS_TMB)) +
   annotate("text", x=0.5, y = 1.90, label = "n=15", hjust = "left") +
   annotate("text", x=2.4, y = 1.55, label = "n=32", hjust = "left") +
   annotate("text", x=2.4, y = 1.90, label = "n=17", hjust = "left") +
-  annotate("text", x=0, y = 10, label = glue("Wilcoxon Rank Sum p={WGS.five.WRS.p}"), hjust = -0.05) +
-  annotate("text", x=0, y = 9.5, label = glue("Event Wilcoxon Rank Sum p={WGS.os.five.WRS.event.p}"), colour = "#00b0c4", hjust = -0.05) +
+  annotate("text", x=0, y = 10, label = glue("Mann-Whitney p={WGS.five.WRS.p}"), hjust = -0.05) +
+  annotate("text", x=0, y = 9.5, label = glue("Event Mann-Whitney p={WGS.os.five.WRS.event.p}"), colour = "#00b0c4", hjust = -0.05) +
   coord_cartesian(clip = "off")
 
 ggsave(file=glue("Results/OS plots/OS_WGS_5years_event.png"), width=7, height=7, dpi=300)
 
 # 5 years OS x continuous WES TMB and event
 WES.os.five.WRS.event <- wilcox.test(complete_WES_TMB ~ os.five, data = surv.dt[RpFS_indicator == 1], # Comparing the distribution between the two OS survival subgroups
-                                  na.rm = TRUE, paired = FALSE, exact = TRUE, conf.int = TRUE)
+                                     na.rm = TRUE, paired = FALSE, exact = TRUE, conf.int = TRUE)
 WES.os.five.WRS.event.p <- round(WES.os.five.WRS.event$p.value, digits = 3)
 
 ggplot(na.omit(surv.dt, cols="os.five"), aes(x=os.five, y=complete_WES_TMB)) +
@@ -788,8 +875,8 @@ ggplot(na.omit(surv.dt, cols="os.five"), aes(x=os.five, y=complete_WES_TMB)) +
   annotate("text", x=0.5, y = 1.40, label = "n=15", hjust = "left") +
   annotate("text", x=2.4, y = 1.05, label = "n=32", hjust = "left") +
   annotate("text", x=2.4, y = 1.40, label = "n=17", hjust = "left") +
-  annotate("text", x=0, y = 8, label = glue("Wilcoxon Rank Sum p={WES.five.WRS.p}"), hjust = -0.05) +
-  annotate("text", x=0, y = 7.6, label = glue("Event Wilcoxon Rank Sum p={WES.os.five.WRS.event.p}"), colour = "#00b0c4", hjust = -0.05) +
+  annotate("text", x=0, y = 8, label = glue("Mann-Whitney p={WES.five.WRS.p}"), hjust = -0.05) +
+  annotate("text", x=0, y = 7.6, label = glue("Event Mann-Whitney p={WES.os.five.WRS.event.p}"), colour = "#00b0c4", hjust = -0.05) +
   coord_cartesian(clip = "off")
 
 ggsave(file=glue("Results/OS plots/OS_WES_5years_event.png"), width=7, height=7, dpi=300)

@@ -11,12 +11,120 @@ library(ggbio)
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 
 # Clinicopathological data - keeping only adenocarcinomas
-clin_data <- as.data.table(read.xlsx("Data/NCI_NeverSmoker_n92_20210812_TMB_drivers.xlsx", sheetIndex = 1))
-clin_data <- clin_data[histology == 3, ]
-Patients_list <- gsub("NSLC-", "",sort(clin_data[, Patient_ID]))
+clin_data <- as.data.table(read.xlsx("Data/n82_NSLC_surv_data.xlsx", sheetIndex = 1)) # See script Data_harmonization.r for details
 
-# Fetching and merging all patients variants
-VEP_data_all_patients <- rbindlist(lapply(Patients_list, function(x) fread(glue("Data/VEP_82_NSLC_TMB/VEP_NSLC-{x}.csv"))), use.names = TRUE)
+# Fetching all patients variants
+VEP_data_all_patients <- fread("Data/n82_NSLC_variants_data.csv") # See script Data_harmonization.r for details
+
+################################################################################
+############  CLASSIC TMB METHODS TO BE OPTIMIZED: WGS AND WES #################
+################################################################################
+
+# WGS TMB mean and median for patients with event (progression or death) before 2 years following surgery
+mean(clin_data[PFS_indicator == 1 & pfs_two == "<2", complete_WGS_TMB])
+median(clin_data[PFS_indicator == 1 & pfs_two == "<2", complete_WGS_TMB])
+
+# WGS TMB mean and median for the other patients (event or not after two years)
+mean(clin_data[pfs_two != "<2", complete_WGS_TMB])
+median(clin_data[pfs_two != "<2", complete_WGS_TMB])
+
+# WES TMB mean and median for patients with event (progression or death) before 2 years following surgery
+mean(clin_data[PFS_indicator == 1 & pfs_two == "<2", complete_WES_TMB])
+median(clin_data[PFS_indicator == 1 & pfs_two == "<2", complete_WES_TMB])
+
+# WES TMB mean and median for the other patients (event or not after two years)
+mean(clin_data[pfs_two != "<2", complete_WES_TMB])
+median(clin_data[pfs_two != "<2", complete_WES_TMB])
+
+################################################################################
+################ USING CADD-PHRED SCORE TO CHOOSE HOTSPOTS #####################
+################################################################################
+
+## Datasets for the analyses
+# Patients with event: progression or death before 2 years following surgery
+event_patients.list <- gsub("NSLC-", "", clin_data[PFS_indicator == 1 & pfs_two == "<2", Patient_ID])
+event_patients.variants <- rbindlist(lapply(event_patients.list, function(x) VEP_data_all_patients[str_detect(VEP_data_all_patients[,ID], glue("^{x}:")),]), use.names = TRUE)
+event_patients.clin <- rbindlist(lapply(event_patients.list, function(x) clin_data[str_detect(clin_data[,Patient_ID], glue("NSLC-{x}")),]), use.names = TRUE)
+
+# Patients without event: no progression or no death before 2 years following surgery
+no_event_patients.list <- gsub("NSLC-", "", clin_data[pfs_two != "<2", Patient_ID])
+no_event_patients.variants <- rbindlist(lapply(no_event_patients.list, function(x) VEP_data_all_patients[str_detect(VEP_data_all_patients[,ID], glue("^{x}:")),]), use.names = TRUE)
+no_event_patients.clin <- rbindlist(lapply(no_event_patients.list, function(x) clin_data[str_detect(clin_data[,Patient_ID], glue("NSLC-{x}")),]), use.names = TRUE)
+
+## Vizualisation
+# Top 10% PHRED scaled CADD score cutoff for hotspot regions
+hotspot_cutoff.CADD <- 20
+
+# Arranging chromosome names for ggplot
+chrom_name <- c(1:22, 'X', 'Y')
+event_patients.variants$CHROM <- factor(event_patients.variants$CHROM, levels=chrom_name)
+no_event_patients.variants$CHROM <- factor(no_event_patients.variants$CHROM, levels=chrom_name)
+
+# Plot for positive event
+ggplot(event_patients.variants,
+       aes(x=POS, y=CADD_PHRED, color = CHROM)) +
+  geom_line(linewidth = 0.2) +
+  geom_hline(yintercept = hotspot_cutoff.CADD, color = "red") +
+  theme_classic() +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        strip.background = element_blank(),
+        strip.placement='outside', # for facet_grid label position
+        panel.spacing = unit(0.3, "lines"),
+        legend.position = "none") + # for facet_grid space between panels
+  scale_y_continuous(limits = c(0,60), breaks = seq(0,60,5)) +
+  xlab("Chromosomes") + 
+  ylab("PHRED CADD score") +
+  facet_grid(~CHROM,
+             space = "free_x",
+             scales = "free_x",
+             switch = "x")
+
+ggsave(file=glue("Results/CADD hotspots/CADD_score_event.png"), width=15, height=7, dpi=300)
+
+# Plot for negative event
+ggplot(no_event_patients.variants, 
+       aes(x=POS, y=CADD_PHRED, color = CHROM)) +
+  geom_line(linewidth = 0.2) +
+  geom_hline(yintercept = hotspot_cutoff.CADD, color = "red") +
+  theme_classic() +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        strip.background = element_blank(),
+        strip.placement='outside', # for facet_grid label position
+        panel.spacing = unit(0.3, "lines"),
+        legend.position = "none") + # for facet_grid space between panels
+  scale_y_continuous(limits = c(0,60), breaks = seq(0,60,5)) +
+  xlab("Chromosomes") + 
+  ylab("PHRED CADD score") +
+  facet_grid(~factor(CHROM, levels=chrom_name),
+             space = "free_x",
+             scales = "free_x",
+             switch = "x")
+
+ggsave(file=glue("Results/CADD hotspots/CADD_score_no_event.png"), width=15, height=7, dpi=300)
+
+
+## CHOICE OF HOTSPOTS
+high_CADD_mut  <- event_patients.variants[CADD_PHRED >= hotspot_cutoff.CADD,]
+region_bounds <- 100 # amount of bp to look around the high CADD scoring mutation
+
+high_CADD_mut.regions <- rbindlist(lapply(1:nrow(high_CADD_mut), function(x) event_patients.variants[POS >= high_CADD_mut[x, POS - region_bounds] & END_POS <= high_CADD_mut[x, END_POS + region_bounds], ]))
+high_CADD_mut.regions.size  <- sapply(1:nrow(high_CADD_mut), function(x) high_CADD_mut[x, END_POS + region_bounds] - high_CADD_mut[x, POS - region_bounds])
+
+total_size <- sum(high_CADD_mut.regions.size)
+
+nrow(high_CADD_mut.regions) / total_size # The final TMB for the regions around the high scoring CADD mutations
+
+summary(coxph(data = clin_data, Surv(time=time_RpFS, event_relapse_two_years_indicator) ~ TMB_high_low))$waldtest[3]
+colnames(clin_data)
+
+################################################################################
+################ USING VARIANT FREQUENCY TO CHOOSE HOTSPOTS ####################
+################################################################################
+
+## TODO
+# Use specific highly mutated regions of positive patients (event_relapse_two_years_indicator == 1) to optimize rather than overall highly mutated regions
 
 # Window size used to compute sliding windows
 window_size <- 5000
@@ -26,23 +134,66 @@ Mb_length <-  window_size/1e6
 chrom_name <- c(1:22, 'X', 'Y')
 # Reading density data of chromosomes with a specific window size
 chrom_density <- rbindlist(lapply(chrom_name, 
-                                  function(x) fread(glue("Data/Sliding windows and density/chromosome_{x}_sw_density_{Mb_length}Mb.csv"))[, chrom:=glue("{x}")]),
+                                  function(x) fread(glue("Data/Sliding windows and frequency/chromosome_{x}_sw_density_{Mb_length}Mb.csv"))[, chrom:=glue("{x}")]),
                            use.names = TRUE)
 
-# 
+# Adjusting the class required for manipulation
 attr(chrom_density$chrom, 'glue') <- NULL
+
+# *** Percentage of highest variant frequency windows to keep
+top_windows_percentage <- 0.02 # Keep top 0.1% of windows with the most variants
 
 # Get the windows with the most variants
 setorder(chrom_density, -variant_density)
-hotspot.cutoff <- ceiling(nrow(chrom_density)*0.001) # Keep top 0.1% of windows with the most variants
+hotspot.cutoff <- ceiling(nrow(chrom_density) * top_windows_percentage)
 hotspot.windows <- chrom_density[1:hotspot.cutoff]
 
-# Merge the neighboring windows if regions are wanted (combined neighboring windows)
+# Merge the neighboring windows (combined neighboring windows)
 hotspot.windows.reduced <- GRanges(hotspot.windows) %>% GenomicRanges::reduce() %>% as.data.table() %>% .[, strand:=NULL]
 names(hotspot.windows.reduced) <- c("CHROM", "POS", "END_POS", "WIDTH")
 
 
-### Unmerged neighboring windows
+### Merged neighboring windows analysis
+# Extract the variants inside each merged window
+hotspots.list.merge <- lapply(1:nrow(hotspot.windows.reduced), 
+                              function(x){rbindlist(list(hotspot.windows.reduced[x], 
+                                                         setorder(VEP_data_all_patients[POS >= hotspot.windows.reduced[x, POS] & 
+                                                                                          END_POS <= hotspot.windows.reduced[x, END_POS] & 
+                                                                                          CHROM == hotspot.windows.reduced[x, CHROM]], POS)),
+                                                    fill=TRUE)
+                              }
+)
+
+# Total merged windows size, needed for TMB calculation
+hotspots.list.merged.total_size <- sum(hotspot.windows.reduced[, WIDTH])
+
+# Order the merged windows based on the number of variants they include
+hotspots.list.merged.nrow <- sapply(1:length(hotspots.list.merge), function(x) nrow(hotspots.list.merge[[x]]))
+hotspots.list.merged.ordered <- hotspots.list.merge[order(hotspots.list.merged.nrow, decreasing = TRUE)]
+
+# Fetching the number of variants included in the merged windows hotspots for each patient
+hotspots.list.merged.variant_count.list <- setNames(lapply(gsub("NSLC-", "", clin_data[, Patient_ID]), 
+                                                           function(patient) sum(unlist(lapply(1:length(hotspots.list.merged.ordered),
+                                                                                               function(hotspot) sum(na.omit(str_detect(hotspots.list.merged.ordered[[hotspot]][, ID], glue("^{patient}:")))))))),
+                                                    nm = clin_data[, Patient_ID])
+
+# Final variant count and TMB for each patients based on the mutation frequency hotspots
+hotspots.list.merged.variant_count <- data.table(Patient_ID = names(hotspots.list.merged.variant_count.list),
+                                                 Merged_window.Variant_count = unname(unlist(hotspots.list.merged.variant_count.list)),
+                                                 Merged_window.TMB = unname(unlist(hotspots.list.merged.variant_count.list)) / hotspots.list.merged.total_size)
+
+# Integrating hotspot variants count and TMB with the rest of the data
+clin_data.variant_count <- merge(clin_data, hotspots.list.merged.variant_count, by.x = "Patient_ID", by.y = "Patient_ID")
+
+# Temporary. Trying to maximize the LRT p-value on the chosen windows
+library(survival)
+colnames(clin_data.variant_count)
+summary(coxph(data = clin_data.variant_count, Surv(time=time_RpFS, event_relapse_two_years_indicator) ~ TMB_high_low))$waldtest[3]
+coxph(data = clin_data.variant_count, Surv(time=time_RpFS, event_relapse_two_years_indicator) ~ pathological_stage_refactor)
+summary(coxph(data = clin_data.variant_count, Surv(time=time_RpFS, event_relapse_two_years_indicator) ~ complete_WGS_TMB))$waldtest[3]
+summary(coxph(data = clin_data.variant_count, Surv(time=time_RpFS, event_relapse_two_years_indicator) ~ Merged_window.Variant_count))$waldtest[3]
+
+### Unmerged neighboring windows analysis
 # If windows are not be merged, change the names of the columns to avoid names matching problems later on
 names(hotspot.windows) <- c("POS", "END_POS", "FREQUENCY", "CHROM")
 hotspot.windows[, CHROM:=as.character(CHROM)] # Editing 
@@ -61,20 +212,14 @@ hotspots.list <- lapply(1:nrow(hotspot.windows),
 hotspots.list.nrow <- sapply(1:length(hotspots.list), function(x) nrow(hotspots.list[[x]]))
 hotspots.list.ordered <- hotspots.list[order(hotspots.list.nrow, decreasing = TRUE)]
 
-### Merged neighboring windows
-# Extract the variants inside each merged window
-hotspots.list.merge <- lapply(1:nrow(hotspot.windows.reduced), 
-                              function(x){rbindlist(list(hotspot.windows.reduced[x], 
-                                                         setorder(VEP_data_all_patients[POS >= hotspot.windows.reduced[x, POS] & 
-                                                                                          END_POS <= hotspot.windows.reduced[x, END_POS] & 
-                                                                                          CHROM == hotspot.windows.reduced[x, CHROM]], POS)),
-                                                    fill=TRUE)
-                              }
-)
 
-# Order the merged windows based on the number of variants they include
-hotspots.list.merged.nrow <- sapply(1:length(hotspots.list.merge), function(x) nrow(hotspots.list.merge[[x]]))
-hotspots.list.merged.ordered <- hotspots.list.merge[order(hotspots.list.merged.nrow, decreasing = TRUE)]
+
+# Looking for specific genes
+min(VEP_data_all_patients[str_detect(VEP_data_all_patients[, SYMBOL], "EGFR"), POS])
+max(VEP_data_all_patients[str_detect(VEP_data_all_patients[, SYMBOL], "EGFR"), END_POS])
+unique(str_extract(VEP_data_all_patients[str_detect(VEP_data_all_patients[, SYMBOL], "EGFR"), ID],"[^:]+"))
+
+
 
 ################################################################################
 ################################ HOTSPOT PLOTS #################################
@@ -97,6 +242,7 @@ nearest_upper_limit <- function(value, divider) {
 
 
 ### Unmerged neighboring windows
+# Specific variant chosen for first test. 
 mut.7.142465001 <- hotspots.list.ordered[1] %>% makeGRangesFromDataFrame(., ignore.strand = TRUE,
                                                                          start.field="POS",
                                                                          end.field="END_POS",
